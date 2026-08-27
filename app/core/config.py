@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = "sqlite:///./crawler.db"
+    MONGODB_URL: str = "mongodb+srv://shopee-sentiment:MChau2506@cluster0.qlbix.mongodb.net/github-crawler"
+    MONGODB_DB_NAME: str = "github-crawler"
+
     
     # Github API
     GITHUB_API_URL: str = "https://api.github.com"

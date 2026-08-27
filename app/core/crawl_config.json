@@ -1,0 +1,51 @@
+{
+  "crawl_interval_minutes": 1.5,
+  "max_repos_per_job": 5,
+  "min_stars": 5,
+  "max_stars": 5000,
+  "random_page_max": 10,
+  "model_retrain_interval_days": 1.0,
+  "daily_retrain_max_queries": 3,
+  "repository_health_weights": {
+    "activity": 0.30,
+    "community": 0.25,
+    "maintenance": 0.25,
+    "growth": 0.20
+  },
+  "language_health_weights": {
+    "density": 0.25,
+    "popularity": 0.35,
+    "ecosystem": 0.20,
+    "growth": 0.20
+  },
+  "forecasting_default_steps": 3,
+  "queries": [
+    "stars:5..50",
+    "stars:50..500",
+    "stars:500..5000",
+    "language:python stars:10..500",
+    "language:javascript stars:10..500",
+    "language:typescript stars:10..500",
+    "language:go stars:10..500",
+    "language:rust stars:10..500",
+    "language:csharp stars:10..500",
+    "language:java stars:10..500",
+    "language:cpp stars:10..500",
+    "language:swift stars:10..500",
+    "language:kotlin stars:10..500",
+    "topic:machine-learning stars:>10",
+    "topic:deep-learning stars:>10",
+    "topic:fastapi stars:>5",
+    "topic:react stars:>10",
+    "topic:vue stars:>10",
+    "topic:flutter stars:>10",
+    "topic:docker stars:>10",
+    "topic:kubernetes stars:>10",
+    "topic:ai stars:>10"
+  ],
+  "sort_options": [
+    "updated",
+    "stars",
+    "forks"
+  ]
+}
