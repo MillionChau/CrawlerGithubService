@@ -111,3 +111,91 @@ class DataCleaner:
             "recent_pull_requests": metrics.get("pulls", []),
             "recent_issues": metrics.get("issues", [])
         }
+
+    @staticmethod
+    def process_graphql_repo(node: dict) -> dict:
+        """
+        Chuyển đổi dữ liệu 1 GraphQL Repository Node về chuẩn Dict Schema của DevRadar.
+        """
+        if not node:
+            return {}
+
+        database_id = node.get("databaseId") or node.get("id", "0")
+        name = DataCleaner.clean_text(node.get("name"))
+        full_name = DataCleaner.clean_text(node.get("nameWithOwner")) or name
+        description = DataCleaner.clean_text(node.get("description"))
+        
+        lang_node = node.get("primaryLanguage")
+        primary_language = lang_node.get("name") if lang_node else "Unknown"
+
+        stars = node.get("stargazerCount", 0)
+        forks = node.get("forkCount", 0)
+
+        open_issues_node = node.get("openIssues")
+        open_issues = open_issues_node.get("totalCount", 0) if isinstance(open_issues_node, dict) else 0
+
+        # Owner Processing
+        owner_raw = node.get("owner", {})
+        followers_node = owner_raw.get("followers", {})
+        followers_count = followers_node.get("totalCount", 0) if isinstance(followers_node, dict) else 0
+        repos_node = owner_raw.get("repositories", {})
+        public_repos_count = repos_node.get("totalCount", 0) if isinstance(repos_node, dict) else 0
+
+        owner_data = {
+            "username": DataCleaner.clean_text(owner_raw.get("login")),
+            "followers": followers_count,
+            "public_repos": public_repos_count,
+            "company": DataCleaner.clean_text(owner_raw.get("company")),
+            "location": DataCleaner.clean_text(owner_raw.get("location")),
+            "bio": DataCleaner.clean_text(owner_raw.get("bio"))
+        }
+
+        # Commits Processing
+        clean_commits = []
+        target = node.get("defaultBranchRef", {}).get("target", {}) if node.get("defaultBranchRef") else {}
+        history = target.get("history", {}).get("nodes", []) if isinstance(target, dict) else []
+        for c in history:
+            clean_commits.append({
+                "sha": c.get("oid"),
+                "author": DataCleaner.clean_text(c.get("author", {}).get("name")),
+                "date": c.get("committedDate"),
+                "message": DataCleaner.clean_text(c.get("message"))
+            })
+
+        # Pull Requests Processing
+        clean_prs = []
+        prs_nodes = node.get("pullRequests", {}).get("nodes", [])
+        for pr in prs_nodes:
+            clean_prs.append({
+                "number": pr.get("number"),
+                "title": DataCleaner.clean_text(pr.get("title")),
+                "state": pr.get("state"),
+                "author": DataCleaner.clean_text(pr.get("author", {}).get("login")),
+                "created_at": pr.get("createdAt"),
+                "merged_at": pr.get("mergedAt")
+            })
+
+        # Framework Detection
+        pkg_text = node.get("packageJson", {}).get("text") if isinstance(node.get("packageJson"), dict) else None
+        req_text = node.get("requirementsTxt", {}).get("text") if isinstance(node.get("requirementsTxt"), dict) else None
+        frameworks = DataCleaner.detect_frameworks(pkg_text, None, req_text)
+
+        return {
+            "id": str(database_id),
+            "name": name,
+            "full_name": full_name,
+            "description": description,
+            "primary_language": primary_language,
+            "stars": stars,
+            "forks": forks,
+            "open_issues": open_issues,
+            "visibility": node.get("visibility", "PUBLIC"),
+            "created_at": node.get("createdAt"),
+            "updated_at": node.get("updatedAt"),
+            "owner": owner_data,
+            "detected_frameworks": frameworks,
+            "recent_commits": clean_commits,
+            "recent_pull_requests": clean_prs,
+            "recent_issues": []
+        }
+
