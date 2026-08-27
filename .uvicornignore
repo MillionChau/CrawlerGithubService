@@ -1,0 +1,5 @@
+venv/*
+.git/*
+models/*
+crawler.db
+crawled_data.json
