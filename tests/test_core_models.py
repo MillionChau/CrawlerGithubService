@@ -94,6 +94,25 @@ def test_model_evaluator():
     assert "mape" in metrics
 
 
+def test_performance_tracker():
+    from app.core_models.evaluation.metrics import PerformanceTracker
+
+    prev_metrics = {"mae": 1.0, "rmse": 2.0, "mape": 5.0}
+    
+    # Healthy case
+    curr_metrics_good = {"mae": 1.05, "rmse": 2.10, "mape": 5.25}
+    res_good = PerformanceTracker.detect_degradation(curr_metrics_good, prev_metrics, threshold_percentage=20.0)
+    assert res_good["degraded"] is False
+    assert res_good["status"] == "HEALTHY"
+
+    # Degraded case (RMSE increased by > 20%)
+    curr_metrics_bad = {"mae": 2.50, "rmse": 3.50, "mape": 15.0}
+    res_bad = PerformanceTracker.detect_degradation(curr_metrics_bad, prev_metrics, threshold_percentage=20.0)
+    assert res_bad["degraded"] is True
+    assert res_bad["status"] == "DEGRADED"
+    assert "WARNING" in res_bad["message"]
+
+
 def test_model_manager(tmp_path):
     manager = ModelManager(base_dir=str(tmp_path))
     sample_artifact = {"weights": {"activity": 0.3}, "version": "1.0"}
@@ -104,3 +123,4 @@ def test_model_manager(tmp_path):
     loaded_artifact = manager.load_model("repository_health", "test_health_model")
     assert loaded_artifact is not None
     assert loaded_artifact["version"] == "1.0"
+
