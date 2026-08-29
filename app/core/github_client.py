@@ -88,5 +88,137 @@ class GithubClient:
             except Exception:
                 return None
 
+    async def fetch_graphql(self, query: str, variables: dict = None):
+        """
+        Thực thi GraphQL Query với GitHub GraphQL API v4 (https://api.github.com/graphql).
+        Gộp toàn bộ requests về Repos, User, Commits, PRs và File contents thành 1 HTTP call.
+        """
+        graphql_url = "https://api.github.com/graphql"
+        headers = self.get_headers()
+        headers["Content-Type"] = "application/json"
+
+        # GraphQL bắt buộc có Token Authorization
+        if "Authorization" not in headers:
+            logger.warning("No GITHUB_ACCESS_TOKEN provided for GraphQL API. Skipping GraphQL and fallback to REST.")
+            return None
+
+        payload = {"query": query, "variables": variables or {}}
+
+        async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
+            try:
+                response = await client.post(graphql_url, json=payload)
+                if response.status_code in (403, 429):
+                    logger.warning("GitHub GraphQL API Rate Limit hit or unauthorized.")
+                    return None
+                response.raise_for_status()
+                res_data = response.json()
+                if "errors" in res_data:
+                    logger.warning(f"GraphQL returned errors: {res_data['errors']}")
+                return res_data.get("data")
+            except Exception as e:
+                logger.error(f"Error fetching GraphQL API: {e}")
+                return None
+
+    async def fetch_repositories_graphql(self, query: str = "stars:>10000", max_repos: int = 5):
+        """
+        Cào toàn bộ thông tin Repositories, Owner, Commits, PRs, và Files cấu hình chỉ với 1 Query GraphQL.
+        """
+        graphql_query = """
+        query SearchRepos($query: String!, $first: Int!) {
+          search(query: $query, type: REPOSITORY, first: $first) {
+            nodes {
+              ... on Repository {
+                databaseId
+                name
+                nameWithOwner
+                description
+                url
+                stargazerCount
+                forkCount
+                createdAt
+                updatedAt
+                pushedAt
+                visibility
+                primaryLanguage {
+                  name
+                }
+                openIssues: issues(states: OPEN) {
+                  totalCount
+                }
+                owner {
+                  login
+                  avatarUrl
+                  url
+                  ... on User {
+                    company
+                    location
+                    bio
+                    followers {
+                      totalCount
+                    }
+                    following {
+                      totalCount
+                    }
+                    repositories {
+                      totalCount
+                    }
+                  }
+                }
+                defaultBranchRef {
+                  target {
+                    ... on Commit {
+                      history(first: 5) {
+                        nodes {
+                          oid
+                          message
+                          committedDate
+                          author {
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                pullRequests(states: [OPEN, CLOSED, MERGED], first: 5) {
+                  nodes {
+                    number
+                    title
+                    state
+                    createdAt
+                    mergedAt
+                    author {
+                      login
+                    }
+                  }
+                }
+                packageJson: object(expression: "HEAD:package.json") {
+                  ... on Blob {
+                    text
+                  }
+                }
+                requirementsTxt: object(expression: "HEAD:requirements.txt") {
+                  ... on Blob {
+                    text
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        variables = {"query": query, "first": max_repos}
+        data = await self.fetch_graphql(graphql_query, variables)
+
+        if data and "search" in data and "nodes" in data["search"]:
+            nodes = [n for n in data["search"]["nodes"] if n]
+            msg = f"[GRAPHQL API v4] Successfully fetched {len(nodes)} repositories in 1 single HTTP call!"
+            print(msg)
+            logger.info(msg)
+            return nodes
+
+        return None
+
 
 github_client = GithubClient()
+

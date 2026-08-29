@@ -120,3 +120,199 @@ class DatabaseDataLoader:
             })
 
         return results
+
+    @classmethod
+    async def save_repository_health_evaluations(cls, evaluations: List[Dict[str, Any]]) -> int:
+        """Lưu danh sách kết quả đánh giá Repository Health vào MongoDB Atlas kèm timestamp lịch sử."""
+        if not evaluations:
+            return 0
+        from datetime import datetime, timezone
+        now_utc = datetime.now(timezone.utc)
+        iso_str = now_utc.isoformat()
+        date_str = now_utc.strftime("%Y-%m-%d")
+
+        docs = []
+        for eval_item in evaluations:
+            item_copy = dict(eval_item)
+            item_copy["evaluated_at"] = iso_str
+            item_copy["snapshot_date"] = date_str
+            docs.append(item_copy)
+
+        mongo_client.connect()
+        inserted_count = 0
+
+        if mongo_client.db is not None:
+            try:
+                res = await mongo_client.db["repo_health_evaluations"].insert_many(docs)
+                inserted_count = len(res.inserted_ids)
+                logger.info(f"Saved {inserted_count} repo health evaluation snapshots to Async MongoDB.")
+            except Exception as e:
+                logger.warning(f"Async Mongo insert error: {e}")
+
+        if inserted_count == 0 and mongo_client.sync_db is not None:
+            try:
+                res = mongo_client.sync_db["repo_health_evaluations"].insert_many(docs)
+                inserted_count = len(res.inserted_ids)
+                logger.info(f"Saved {inserted_count} repo health evaluation snapshots to Sync MongoDB.")
+            except Exception as e:
+                logger.warning(f"Sync Mongo insert error: {e}")
+
+        return inserted_count
+
+    @classmethod
+    async def save_language_health_evaluations(cls, evaluations: List[Dict[str, Any]]) -> int:
+        """Lưu danh sách kết quả đánh giá Language Health vào MongoDB Atlas kèm timestamp lịch sử."""
+        if not evaluations:
+            return 0
+        from datetime import datetime, timezone
+        now_utc = datetime.now(timezone.utc)
+        iso_str = now_utc.isoformat()
+        date_str = now_utc.strftime("%Y-%m-%d")
+
+        docs = []
+        for eval_item in evaluations:
+            item_copy = dict(eval_item)
+            item_copy["evaluated_at"] = iso_str
+            item_copy["snapshot_date"] = date_str
+            docs.append(item_copy)
+
+        mongo_client.connect()
+        inserted_count = 0
+
+        if mongo_client.db is not None:
+            try:
+                res = await mongo_client.db["language_health_evaluations"].insert_many(docs)
+                inserted_count = len(res.inserted_ids)
+                logger.info(f"Saved {inserted_count} language health evaluation snapshots to Async MongoDB.")
+            except Exception as e:
+                logger.warning(f"Async Mongo insert error: {e}")
+
+        if inserted_count == 0 and mongo_client.sync_db is not None:
+            try:
+                res = mongo_client.sync_db["language_health_evaluations"].insert_many(docs)
+                inserted_count = len(res.inserted_ids)
+                logger.info(f"Saved {inserted_count} language health evaluation snapshots to Sync MongoDB.")
+            except Exception as e:
+                logger.warning(f"Sync Mongo insert error: {e}")
+
+        return inserted_count
+
+    @classmethod
+    async def save_model_performance_log(cls, log_entry: Dict[str, Any]) -> bool:
+        """Lưu nhật ký đánh giá hiệu năng mô hình (Model Performance Log) vào MongoDB Atlas."""
+        from datetime import datetime, timezone
+        now_utc = datetime.now(timezone.utc)
+        log_copy = dict(log_entry)
+        if "timestamp" not in log_copy:
+            log_copy["timestamp"] = now_utc.isoformat()
+
+        mongo_client.connect()
+        saved = False
+
+        if mongo_client.db is not None:
+            try:
+                await mongo_client.db["model_performance_logs"].insert_one(log_copy)
+                saved = True
+                logger.info(f"Saved model performance log to Async MongoDB.")
+            except Exception as e:
+                logger.warning(f"Async Mongo insert error for performance log: {e}")
+
+        if not saved and mongo_client.sync_db is not None:
+            try:
+                mongo_client.sync_db["model_performance_logs"].insert_one(log_copy)
+                saved = True
+                logger.info(f"Saved model performance log to Sync MongoDB.")
+            except Exception as e:
+                logger.warning(f"Sync Mongo insert error for performance log: {e}")
+
+        return saved
+
+    @classmethod
+    async def get_repository_health_history(cls, repo_name: str, limit: int = 30) -> List[Dict[str, Any]]:
+        """Truy vấn lịch sử đánh giá điểm sức khỏe của 1 repo để vẽ biểu đồ."""
+        history = []
+        mongo_client.connect()
+
+        if mongo_client.db is not None:
+            try:
+                cursor = mongo_client.db["repo_health_evaluations"].find(
+                    {"repository": repo_name}
+                ).sort("evaluated_at", -1).limit(limit)
+                async for doc in cursor:
+                    doc["_id"] = str(doc.get("_id"))
+                    history.append(doc)
+            except Exception as e:
+                logger.warning(f"Async Mongo search error: {e}")
+
+        if not history and mongo_client.sync_db is not None:
+            try:
+                cursor = mongo_client.sync_db["repo_health_evaluations"].find(
+                    {"repository": repo_name}
+                ).sort("evaluated_at", -1).limit(limit)
+                for doc in cursor:
+                    doc["_id"] = str(doc.get("_id"))
+                    history.append(doc)
+            except Exception as e:
+                logger.warning(f"Sync Mongo search error: {e}")
+
+        # Re-sort in ascending chronological order for frontend charts
+        history.reverse()
+        return history
+
+    @classmethod
+    async def get_language_health_history(cls, language: str, limit: int = 30) -> List[Dict[str, Any]]:
+        """Truy vấn lịch sử điểm sức khỏe & chỉ số của 1 ngôn ngữ lập trình để vẽ biểu đồ."""
+        history = []
+        mongo_client.connect()
+
+        if mongo_client.db is not None:
+            try:
+                cursor = mongo_client.db["language_health_evaluations"].find(
+                    {"language": language}
+                ).sort("evaluated_at", -1).limit(limit)
+                async for doc in cursor:
+                    doc["_id"] = str(doc.get("_id"))
+                    history.append(doc)
+            except Exception as e:
+                logger.warning(f"Async Mongo search error: {e}")
+
+        if not history and mongo_client.sync_db is not None:
+            try:
+                cursor = mongo_client.sync_db["language_health_evaluations"].find(
+                    {"language": language}
+                ).sort("evaluated_at", -1).limit(limit)
+                for doc in cursor:
+                    doc["_id"] = str(doc.get("_id"))
+                    history.append(doc)
+            except Exception as e:
+                logger.warning(f"Sync Mongo search error: {e}")
+
+        history.reverse()
+        return history
+
+    @classmethod
+    async def get_latest_model_performance_logs(cls, limit: int = 10) -> List[Dict[str, Any]]:
+        """Truy vấn các nhật ký hiệu năng & cảnh báo sụt giảm mô hình mới nhất."""
+        logs = []
+        mongo_client.connect()
+
+        if mongo_client.db is not None:
+            try:
+                cursor = mongo_client.db["model_performance_logs"].find({}).sort("timestamp", -1).limit(limit)
+                async for doc in cursor:
+                    doc["_id"] = str(doc.get("_id"))
+                    logs.append(doc)
+            except Exception as e:
+                logger.warning(f"Async Mongo search error: {e}")
+
+        if not logs and mongo_client.sync_db is not None:
+            try:
+                cursor = mongo_client.sync_db["model_performance_logs"].find({}).sort("timestamp", -1).limit(limit)
+                for doc in cursor:
+                    doc["_id"] = str(doc.get("_id"))
+                    logs.append(doc)
+            except Exception as e:
+                logger.warning(f"Sync Mongo search error: {e}")
+
+        return logs
+
