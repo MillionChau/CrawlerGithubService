@@ -1,5 +1,6 @@
 import re
 import json
+from datetime import datetime
 
 class DataCleaner:
     @staticmethod
@@ -105,6 +106,7 @@ class DataCleaner:
             "visibility": raw_repo.get("visibility"),
             "created_at": raw_repo.get("created_at"),
             "updated_at": raw_repo.get("updated_at"),
+            "last_synced_at": datetime.now().isoformat(),
             "owner": owner_data,
             "detected_frameworks": frameworks,
             "recent_commits": metrics.get("commits", []),

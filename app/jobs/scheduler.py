@@ -8,6 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.core.config import settings
 from app.core.crawl_config import CrawlConfigManager
 from app.services.pipelines.crawler_pipeline import CrawlerPipeline
+from app.services.pipelines.repo_updater_pipeline import RepoUpdaterPipeline
 from app.core_models.data.db_loader import DatabaseDataLoader
 from app.core_models.health.repository_health import RepositoryHealthModel
 from app.core_models.health.language_health import LanguageHealthModel
@@ -43,6 +44,29 @@ async def scheduled_crawl_job():
         logger.info(done_msg)
     except Exception as e:
         err_msg = f"Error during Scheduled Crawl Job: {e}"
+        print(err_msg)
+        logger.error(err_msg, exc_info=True)
+
+
+async def scheduled_update_existing_repos_job():
+    """
+    Job chạy định kỳ để làm mới/cập nhật dữ liệu thời gian thực (stars, forks, issues, commits, PRs...)
+    cho các repositories đã có trong Database MongoDB Atlas.
+    Ưu tiên cập nhật các repositories lâu nhất chưa được đồng bộ.
+    """
+    batch_size = CrawlConfigManager.get_update_batch_size()
+    msg = f"[{datetime.now()}] 🔄 Triggering scheduled EXISTING REPOSITORIES UPDATE JOB (batch_size={batch_size})..."
+    print(msg)
+    logger.info(msg)
+
+    try:
+        pipeline = RepoUpdaterPipeline()
+        summary = await pipeline.execute(batch_size=batch_size)
+        done_msg = f"[{datetime.now()}] ✅ Scheduled Existing Repos Update Job finished. Updated {summary.get('updated_count', 0)}/{summary.get('total_candidates', 0)} repositories."
+        print(done_msg)
+        logger.info(done_msg)
+    except Exception as e:
+        err_msg = f"Error during Scheduled Existing Repos Update Job: {e}"
         print(err_msg)
         logger.error(err_msg, exc_info=True)
 
@@ -97,15 +121,21 @@ async def scheduled_daily_train_job():
 
 
 def start_scheduler():
-    """Khởi động APScheduler với Job Cào dữ liệu định kỳ & Job Daily Retrain Models Hàng Ngày."""
+    """Khởi động APScheduler với Job Cào dữ liệu định kỳ, Job Cập nhật Repo cũ & Job Daily Retrain Models Hàng Ngày."""
     crawl_interval_minutes = CrawlConfigManager.get_interval_minutes()
+    update_interval_minutes = CrawlConfigManager.get_update_interval_minutes()
     retrain_interval_days = CrawlConfigManager.get_model_retrain_interval_days()
     
-    start_msg = f"Starting APScheduler: Periodic Crawl Job (Every {crawl_interval_minutes} mins) + Daily Model Retrain Job (Every {retrain_interval_days} days)..."
+    start_msg = (
+        f"Starting APScheduler:\n"
+        f"  - Periodic Crawl Job: Every {crawl_interval_minutes} mins\n"
+        f"  - Periodic Existing Repos Update Job: Every {update_interval_minutes} mins\n"
+        f"  - Daily Model Retrain Job: Every {retrain_interval_days} days"
+    )
     print(start_msg)
     logger.info(start_msg)
 
-    # 1. Job cào dữ liệu định kỳ
+    # 1. Job cào dữ liệu định kỳ (Tìm kiếm repo mới)
     scheduler.add_job(
         scheduled_crawl_job,
         trigger=IntervalTrigger(minutes=crawl_interval_minutes),
@@ -115,18 +145,26 @@ def start_scheduler():
         replace_existing=True
     )
 
-    # 2. Job Retrain Models & Cập nhật dữ liệu HÀNG NGÀY (Cấu hình động từ JSON)
+    # 2. Job cập nhật định kỳ cho các repo đã có trong Database
+    scheduler.add_job(
+        scheduled_update_existing_repos_job,
+        trigger=IntervalTrigger(minutes=update_interval_minutes),
+        id="github_update_existing_repos_job",
+        name="GitHub Periodic Existing Repos Update Job",
+        replace_existing=True
+    )
+
+    # 3. Job Retrain Models & Cập nhật dữ liệu HÀNG NGÀY (Cấu hình động từ JSON)
     scheduler.add_job(
         scheduled_daily_train_job,
         trigger=IntervalTrigger(days=retrain_interval_days),
         id="github_daily_train_job",
         name="GitHub Daily Model Retraining Job",
-        next_run_time=datetime.now(), # Kích hoạt lượt đầu tiên khi startup!
         replace_existing=True
     )
 
     scheduler.start()
-    logger.info(f"APScheduler started successfully with 2 active cronjobs.")
+    logger.info(f"APScheduler started successfully with 3 active cronjobs.")
 
 
 def stop_scheduler():

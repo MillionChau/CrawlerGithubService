@@ -79,6 +79,8 @@ from app.core.crawl_config import CrawlConfigManager
 class CrawlConfigUpdateRequest(BaseModel):
     crawl_interval_minutes: Optional[float] = None
     max_repos_per_job: Optional[int] = None
+    update_interval_minutes: Optional[float] = None
+    update_batch_size: Optional[int] = None
     min_stars: Optional[int] = None
     max_stars: Optional[int] = None
     random_page_max: Optional[int] = None
@@ -111,7 +113,7 @@ async def update_crawl_config(request: CrawlConfigUpdateRequest) -> Dict[str, An
 
 
 from fastapi import BackgroundTasks
-from app.jobs.scheduler import scheduled_daily_train_job
+from app.jobs.scheduler import scheduled_daily_train_job, scheduled_update_existing_repos_job
 
 
 @router.post("/retrain-now")
@@ -123,4 +125,16 @@ async def trigger_retrain_now(background_tasks: BackgroundTasks) -> Dict[str, An
     return {
         "status": "success",
         "message": "Daily Model Retraining & Data Sync job triggered in background."
+    }
+
+
+@router.post("/update-repos-now")
+async def trigger_update_repos_now(background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    """
+    Kích hoạt tiến trình làm mới / cập nhật lại các repo đã có trong Database ngay lập tức.
+    """
+    background_tasks.add_task(scheduled_update_existing_repos_job)
+    return {
+        "status": "success",
+        "message": "Existing repositories update job triggered in background."
     }

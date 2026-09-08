@@ -49,6 +49,12 @@ class GithubClient:
                 await asyncio.sleep(1)
         return all_repos
 
+    async def fetch_repository(self, owner: str, repo: str):
+        url = f"{self.base_url}/repos/{owner}/{repo}"
+        headers = self.get_headers()
+        async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
+            return await self._get(client, url)
+
     async def fetch_user(self, username: str):
         url = f"{self.base_url}/users/{username}"
         headers = self.get_headers()
