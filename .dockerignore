@@ -1,0 +1,21 @@
+# Local environments and credentials
+venv/
+.env
+
+# VCS and local tool caches
+.git/
+.gitignore
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Local runtime artifacts
+crawler.db
+
+# Tests and one-off demo runners
+tests/
+run_demo_crawler.py
+run_demo_models.py
+run_instant_crawl.py
+run_multi_level_crawler.py
+check_mongo_count.py
