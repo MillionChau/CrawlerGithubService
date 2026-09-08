@@ -2,7 +2,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks
 from app.db.mongo import mongo_client
 from app.services.pipelines.crawler_pipeline import CrawlerPipeline
-from app.jobs.scheduler import start_scheduler, stop_scheduler, scheduler, scheduled_crawl_job
+from app.services.pipelines.repo_updater_pipeline import RepoUpdaterPipeline
+from app.jobs.scheduler import (
+    start_scheduler,
+    stop_scheduler,
+    scheduler,
+    scheduled_crawl_job,
+    scheduled_update_existing_repos_job
+)
 from app.api.analytics import router as analytics_router
 
 
@@ -70,6 +77,15 @@ async def trigger_scheduler_now(background_tasks: BackgroundTasks):
     }
 
 
+@app.post("/scheduler/trigger-update-now")
+async def trigger_update_scheduler_now(background_tasks: BackgroundTasks):
+    background_tasks.add_task(scheduled_update_existing_repos_job)
+    return {
+        "status": "success",
+        "message": "Scheduled existing repositories update job triggered in background."
+    }
+
+
 @app.post("/crawl")
 async def trigger_crawl(query: str = "stars:>10000", max_repos: int = 5):
     pipeline = CrawlerPipeline()
@@ -79,6 +95,13 @@ async def trigger_crawl(query: str = "stars:>10000", max_repos: int = 5):
         "processed_count": len(results),
         "data": results
     }
+
+
+@app.post("/repos/update-existing")
+async def trigger_update_existing_repos(batch_size: int = 5):
+    pipeline = RepoUpdaterPipeline()
+    summary = await pipeline.execute(batch_size=batch_size)
+    return summary
 
 
 if __name__ == "__main__":

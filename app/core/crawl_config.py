@@ -10,6 +10,8 @@ CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), "crawl_config.json")
 DEFAULT_CRAWL_CONFIG: Dict[str, Any] = {
     "crawl_interval_minutes": 1.5,
     "max_repos_per_job": 5,
+    "update_interval_minutes": 3.0,
+    "update_batch_size": 5,
     "min_stars": 5,
     "max_stars": 5000,
     "random_page_max": 10,
@@ -100,6 +102,14 @@ class CrawlConfigManager:
     @classmethod
     def get_interval_minutes(cls) -> float:
         return float(cls.load_config().get("crawl_interval_minutes", 1.5))
+
+    @classmethod
+    def get_update_interval_minutes(cls) -> float:
+        return float(cls.load_config().get("update_interval_minutes", 3.0))
+
+    @classmethod
+    def get_update_batch_size(cls) -> int:
+        return int(cls.load_config().get("update_batch_size", 5))
 
     @classmethod
     def get_random_page_max(cls) -> int:

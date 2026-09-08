@@ -79,6 +79,8 @@ from app.core.crawl_config import CrawlConfigManager
 class CrawlConfigUpdateRequest(BaseModel):
     crawl_interval_minutes: Optional[float] = None
     max_repos_per_job: Optional[int] = None
+    update_interval_minutes: Optional[float] = None
+    update_batch_size: Optional[int] = None
     min_stars: Optional[int] = None
     max_stars: Optional[int] = None
     random_page_max: Optional[int] = None

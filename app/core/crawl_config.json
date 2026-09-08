@@ -1,6 +1,8 @@
 {
   "crawl_interval_minutes": 1.5,
   "max_repos_per_job": 5,
+  "update_interval_minutes": 3.0,
+  "update_batch_size": 5,
   "min_stars": 5,
   "max_stars": 5000,
   "random_page_max": 10,
