@@ -11,6 +11,7 @@ from app.jobs.scheduler import (
     scheduled_update_existing_repos_job
 )
 from app.api.analytics import router as analytics_router
+from app.core.request_logging import RequestLoggingMiddleware
 
 
 @asynccontextmanager
@@ -30,6 +31,9 @@ app = FastAPI(
 )
 
 app.include_router(analytics_router)
+
+# Request logging: thêm sau cùng => chạy ngoài cùng, log mọi request kèm thời gian phản hồi
+app.add_middleware(RequestLoggingMiddleware)
 
 
 @app.get("/")

@@ -14,4 +14,6 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "run_multi_level_crawler.py"]
+# Chạy FastAPI server + APScheduler (script crawler demo chạy bằng:
+#   docker compose exec crawler-api python run_multi_level_crawler.py)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
