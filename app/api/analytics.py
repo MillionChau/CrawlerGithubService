@@ -113,7 +113,8 @@ async def update_crawl_config(request: CrawlConfigUpdateRequest) -> Dict[str, An
 
 
 from fastapi import BackgroundTasks
-from app.jobs.scheduler import scheduled_daily_train_job, scheduled_update_existing_repos_job
+from app.jobs.scheduler import scheduled_daily_train_job
+from app.core_models.data.db_loader import DatabaseDataLoader
 
 
 @router.post("/retrain-now")
@@ -128,13 +129,34 @@ async def trigger_retrain_now(background_tasks: BackgroundTasks) -> Dict[str, An
     }
 
 
-@router.post("/update-repos-now")
-async def trigger_update_repos_now(background_tasks: BackgroundTasks) -> Dict[str, Any]:
+@router.get("/repository-health/history")
+async def get_repository_health_history(
+    full_name: str = Query(..., description="Tên repository (vd: facebook/react)"),
+    limit: int = Query(30, ge=1, le=100)
+) -> List[Dict[str, Any]]:
     """
-    Kích hoạt tiến trình làm mới / cập nhật lại các repo đã có trong Database ngay lập tức.
+    Lấy chuỗi lịch sử điểm sức khỏe của một Repository phục vụ vẽ biểu đồ (Chart).
     """
-    background_tasks.add_task(scheduled_update_existing_repos_job)
-    return {
-        "status": "success",
-        "message": "Existing repositories update job triggered in background."
-    }
+    return await DatabaseDataLoader.get_repository_health_history(repo_name=full_name, limit=limit)
+
+
+@router.get("/language-health/history")
+async def get_language_health_history(
+    language: str = Query(..., description="Tên ngôn ngữ lập trình (vd: Python)"),
+    limit: int = Query(30, ge=1, le=100)
+) -> List[Dict[str, Any]]:
+    """
+    Lấy chuỗi lịch sử điểm sức khỏe & xu hướng Ngôn ngữ lập trình phục vụ vẽ biểu đồ (Chart).
+    """
+    return await DatabaseDataLoader.get_language_health_history(language=language, limit=limit)
+
+
+@router.get("/model-performance/logs")
+async def get_model_performance_logs(
+    limit: int = Query(10, ge=1, le=50)
+) -> List[Dict[str, Any]]:
+    """
+    Lấy danh sách nhật ký đánh giá hiệu năng (MAE, RMSE, MAPE) & cảnh báo sụt giảm mô hình.
+    """
+    return await DatabaseDataLoader.get_latest_model_performance_logs(limit=limit)
+
