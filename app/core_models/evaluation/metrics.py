@@ -53,3 +53,42 @@ class ModelEvaluator:
             "recall": round(accuracy, 4),
             "f1_score": round(accuracy, 4)
         }
+
+
+class PerformanceTracker:
+    """
+    Theo dõi sự suy giảm hiệu năng mô hình (Model Drift / Performance Degradation).
+    """
+
+    @staticmethod
+    def detect_degradation(
+        curr_metrics: Dict[str, float],
+        prev_metrics: Dict[str, float],
+        threshold_percentage: float = 20.0
+    ) -> Dict[str, Any]:
+        """
+        Kiểm tra xem các chỉ số lỗi (MAE, RMSE, MAPE) có tăng quá ngưỡng threshold_percentage hay không.
+        """
+        degraded = False
+        reasons = []
+
+        for key in ["mae", "rmse", "mape"]:
+            if key in curr_metrics and key in prev_metrics and prev_metrics[key] > 0:
+                pct_change = ((curr_metrics[key] - prev_metrics[key]) / prev_metrics[key]) * 100.0
+                if pct_change > threshold_percentage:
+                    degraded = True
+                    reasons.append(f"{key.upper()} increased by {pct_change:.1f}%")
+
+        if degraded:
+            return {
+                "degraded": True,
+                "status": "DEGRADED",
+                "message": f"WARNING: Model degradation detected: {', '.join(reasons)}"
+            }
+
+        return {
+            "degraded": False,
+            "status": "HEALTHY",
+            "message": "Model performance is within acceptable thresholds."
+        }
+
