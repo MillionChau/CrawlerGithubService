@@ -62,43 +62,33 @@ class PerformanceTracker:
 
     @staticmethod
     def detect_degradation(
-        current_metrics: Dict[str, float],
-        previous_metrics: Dict[str, float] = None,
+        curr_metrics: Dict[str, float],
+        prev_metrics: Dict[str, float],
         threshold_percentage: float = 20.0
     ) -> Dict[str, Any]:
         """
-        So sánh sai số đợt train hiện tại với đợt trước.
-        Nếu RMSE hoặc MAE tăng vượt ngưỡng threshold_percentage (%) so với baseline,
-        gắn flag degraded = True và thông báo cảnh báo.
+        Kiểm tra xem các chỉ số lỗi (MAE, RMSE, MAPE) có tăng quá ngưỡng threshold_percentage hay không.
         """
-        if not previous_metrics:
+        degraded = False
+        reasons = []
+
+        for key in ["mae", "rmse", "mape"]:
+            if key in curr_metrics and key in prev_metrics and prev_metrics[key] > 0:
+                pct_change = ((curr_metrics[key] - prev_metrics[key]) / prev_metrics[key]) * 100.0
+                if pct_change > threshold_percentage:
+                    degraded = True
+                    reasons.append(f"{key.upper()} increased by {pct_change:.1f}%")
+
+        if degraded:
             return {
-                "status": "HEALTHY",
-                "degraded": False,
-                "metrics": current_metrics,
-                "message": "First baseline model performance recorded successfully."
+                "degraded": True,
+                "status": "DEGRADED",
+                "message": f"WARNING: Model degradation detected: {', '.join(reasons)}"
             }
 
-        prev_rmse = previous_metrics.get("rmse", 0.0)
-        curr_rmse = current_metrics.get("rmse", 0.0)
-
-        degraded = False
-        message = "Model performance is stable."
-        pct_change = 0.0
-
-        if prev_rmse > 0:
-            pct_change = ((curr_rmse - prev_rmse) / prev_rmse) * 100.0
-            if pct_change > threshold_percentage:
-                degraded = True
-                message = f"WARNING: Model RMSE increased by {pct_change:.2f}% (from {prev_rmse} to {curr_rmse}), exceeding threshold of {threshold_percentage}%!"
-
-        status = "DEGRADED" if degraded else "HEALTHY"
-
         return {
-            "status": status,
-            "degraded": degraded,
-            "percentage_change": round(pct_change, 2),
-            "metrics": current_metrics,
-            "message": message
+            "degraded": False,
+            "status": "HEALTHY",
+            "message": "Model performance is within acceptable thresholds."
         }
 

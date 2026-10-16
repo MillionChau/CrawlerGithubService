@@ -226,5 +226,19 @@ class GithubClient:
         return None
 
 
+    async def fetch_rate_limit(self) -> int | None:
+        url = f"{self.base_url}/rate_limit"
+        headers = self.get_headers()
+        async with httpx.AsyncClient(headers=headers, timeout=10.0) as client:
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("resources", {}).get("core", {}).get("remaining")
+                return None
+            except Exception:
+                return None
+
+
 github_client = GithubClient()
 
