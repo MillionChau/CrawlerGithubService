@@ -40,7 +40,13 @@ async def scheduled_crawl_job():
     
     try:
         pipeline = CrawlerPipeline()
-        results = await pipeline.execute(query=selected_query, max_repos=max_repos, page=random_page, sort=selected_sort)
+        results = await pipeline.execute(
+            query=selected_query,
+            max_repos=max_repos,
+            page=random_page,
+            sort=selected_sort,
+            trigger_type="SCHEDULED"
+        )
         done_msg = f"[{datetime.now()}] Scheduled Crawl Job finished successfully. Processed {len(results)} repositories into MongoDB Atlas."
         print(done_msg)
         logger.info(done_msg)
@@ -92,7 +98,7 @@ async def scheduled_daily_train_job():
         queries = CrawlConfigManager.get_queries()
         max_queries = CrawlConfigManager.get_daily_retrain_max_queries()
         for q in queries[:max_queries]:
-            await pipeline.execute(query=q, max_repos=5)
+            await pipeline.execute(query=q, max_repos=5, trigger_type="SCHEDULED")
             
         # 2. Nạp dữ liệu từ MongoDB Atlas
         repos = await DatabaseDataLoader.get_all_repositories()

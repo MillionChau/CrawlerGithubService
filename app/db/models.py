@@ -45,3 +45,23 @@ class MetricModel(Base):
     metric_value = Column(Float, default=0.0)
     extra_info = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+
+class CrawlLogModel(BaseModel):
+    session_id: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    trigger_type: str = "SCHEDULED"  # SCHEDULED | MANUAL | CLI
+    query: str = ""
+    status: str = "RUNNING"  # RUNNING | SUCCESS | FAILED | STOPPED
+    repos_crawled: int = 0
+    new_repos_count: int = 0
+    updated_repos_count: int = 0
+    crawled_repo_names: List[str] = Field(default_factory=list)
+    github_rate_limit_remaining: Optional[int] = None
+    error_message: Optional[str] = None

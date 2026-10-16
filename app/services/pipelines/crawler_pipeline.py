@@ -1,8 +1,9 @@
 import os
 import json
+import uuid
 import logging
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.db.mongo import mongo_client
 from app.core.github_client import github_client
 from app.services.data_cleaner import DataCleaner
@@ -19,10 +20,70 @@ class CrawlerPipeline:
         self.structure_scanner = StructureScanner()
         self.metrics_calculator = MetricsCalculator()
 
-    async def execute(self, query: str = "stars:>10000", max_repos: int = 5, page: int = 1, sort: str = "stars") -> List[Dict[str, Any]]:
-        logger.info(f"Executing CrawlerPipeline with query='{query}', max_repos={max_repos}, page={page}, sort='{sort}'")
+    async def execute(
+        self,
+        query: str = "stars:>10000",
+        max_repos: int = 5,
+        page: int = 1,
+        sort: str = "stars",
+        trigger_type: str = "MANUAL",
+        session_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        session_id = session_id or str(uuid.uuid4())
+        started_at = datetime.utcnow()
+        logger.info(f"[{session_id}] Executing CrawlerPipeline (MongoDB Mode) with query='{query}', max_repos={max_repos}, page={page}, sort='{sort}', trigger='{trigger_type}'")
+
+        log_entry = {
+            "session_id": session_id,
+            "started_at": started_at,
+            "finished_at": None,
+            "duration_seconds": None,
+            "trigger_type": trigger_type,
+            "query": query,
+            "status": "RUNNING",
+            "repos_crawled": 0,
+            "new_repos_count": 0,
+            "updated_repos_count": 0,
+            "crawled_repo_names": [],
+            "github_rate_limit_remaining": None,
+            "error_message": None
+        }
+        await mongo_client.create_crawl_log(log_entry)
         
+        new_repos_count = 0
+        updated_repos_count = 0
+        crawled_repo_names = []
         results = []
+
+        try:
+            raw_repos = await github_client.fetch_repositories(query=query, max_pages=1, page=page, sort=sort)
+        except Exception as e:
+            logger.error(f"Failed to fetch repositories from GitHub API: {e}")
+            finished_at = datetime.utcnow()
+            duration = round((finished_at - started_at).total_seconds(), 2)
+            await mongo_client.update_crawl_log(session_id, {
+                "finished_at": finished_at,
+                "duration_seconds": duration,
+                "status": "FAILED",
+                "error_message": str(e)
+            })
+            return []
+
+        if not raw_repos:
+            logger.warning("No repositories returned from GitHub API.")
+            finished_at = datetime.utcnow()
+            duration = round((finished_at - started_at).total_seconds(), 2)
+            rate_limit_remaining = await github_client.fetch_rate_limit()
+            await mongo_client.update_crawl_log(session_id, {
+                "finished_at": finished_at,
+                "duration_seconds": duration,
+                "status": "SUCCESS",
+                "repos_crawled": 0,
+                "github_rate_limit_remaining": rate_limit_remaining
+            })
+            return []
+
+        raw_repos = raw_repos[:max_repos]
 
         # -----------------------------------------------------------------
         # THỬ NGHIỆM 1: Cào dữ liệu cực nhanh bằng GitHub GraphQL API v4 (1 Request)
@@ -49,13 +110,92 @@ class CrawlerPipeline:
             logger.info("Running REST API v3 fallback pipeline...")
             try:
                 raw_repos = await github_client.fetch_repositories(query=query, max_pages=1, page=page, sort=sort)
+                owner = repo.get("owner", {}).get("login", "unknown")
+                repo_name = repo.get("name", "unknown")
+                logger.info(f"Processing repo: {owner}/{repo_name}")
+
+                if raw_user:
+                        clean_user = DataCleaner.process_user(raw_user)
+            except Exception:
+                pass
+
+                clean_commits = []
+                try:
+                    raw_commits = await github_client.fetch_repo_commits(owner, repo_name, per_page=3)
+                    clean_commits = [DataCleaner.process_commit(c) for c in raw_commits] if raw_commits else []
+                except Exception:
+                    pass
+
+                clean_prs = []
+                try:
+                    raw_prs = await github_client.fetch_repo_pulls(owner, repo_name, per_page=3)
+                    clean_prs = [DataCleaner.process_pr(pr) for pr in raw_prs] if raw_prs else []
+                except Exception:
+                    pass
+
+                frameworks = []
+                try:
+                    package_json = await github_client.fetch_repo_file_content(owner, repo_name, "package.json")
+                    req_txt = await github_client.fetch_repo_file_content(owner, repo_name, "requirements.txt")
+                    frameworks = DataCleaner.detect_frameworks(package_json, None, req_txt)
+                except Exception:
+                    pass
+
+                metrics = {
+                    "commits": clean_commits,
+                    "pulls": clean_prs,
+                    "commit_count": len(clean_commits),
+                    "pr_count": len(clean_prs)
+                }
+
+                clean_repo = DataCleaner.process_repo(repo, clean_user, frameworks, metrics)
+                results.append(clean_repo)
+                crawled_repo_names.append(clean_repo["full_name"])
+
+                # -------------------------------------------------------------
+                # Lưu / Upsert dữ liệu duy nhất vào MongoDB Atlas
+                # -------------------------------------------------------------
+                if mongo_client.db is not None:
+                    try:
+                        existing = await mongo_client.db["repositories"].find_one({"id": clean_repo["id"]})
+                        res = await mongo_client.db["repositories"].update_one(
+                            {"id": clean_repo["id"]},
+                            {"$set": clean_repo},
+                            upsert=True
+                        )
+                        if existing is None and res.upserted_id:
+                            new_repos_count += 1
+                            logger.info(f"✨ [NEW REPO] Saved '{clean_repo['full_name']}' into MongoDB Atlas ('repositories' collection).")
+                        else:
+                            updated_repos_count += 1
+                            logger.info(f"🔄 [UPDATED REPO] Updated '{clean_repo['full_name']}' in MongoDB Atlas ('repositories' collection).")
+                    except Exception as e:
+                        logger.warning(f"Failed to upsert repo '{clean_repo['full_name']}' to MongoDB Atlas: {e}")
+                elif mongo_client.sync_db is not None:
+                    try:
+                        existing = mongo_client.sync_db["repositories"].find_one({"id": clean_repo["id"]})
+                        mongo_client.sync_db["repositories"].update_one(
+                            {"id": clean_repo["id"]},
+                            {"$set": clean_repo},
+                            upsert=True
+                        )
+                        if existing is None:
+                            new_repos_count += 1
+                            logger.info(f"✨ [NEW REPO] Saved '{clean_repo['full_name']}' into MongoDB Atlas (Sync Mode).")
+                        else:
+                            updated_repos_count += 1
+                            logger.info(f"🔄 [UPDATED REPO] Updated '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
+                    except Exception as e:
+                        logger.warning(f"Failed sync upsert to MongoDB Atlas: {e}")
+                else:
+                    new_repos_count += 1
+
             except Exception as e:
                 logger.error(f"Failed to fetch repositories from GitHub REST API: {e}")
                 return []
 
             if not raw_repos:
                 logger.warning("No repositories returned from GitHub REST API.")
-                return []
 
             raw_repos = raw_repos[:max_repos]
 
@@ -164,5 +304,21 @@ class CrawlerPipeline:
                 logger.info(f"✅ Saved total {len(updated_list)} repos to local 'crawled_data.json'.")
             except Exception as e:
                 logger.warning(f"Failed to save local JSON file: {e}")
+
+        # Cập nhật nhật ký hoàn tất phiên cào (crawl_logs)
+        finished_at = datetime.utcnow()
+        duration = round((finished_at - started_at).total_seconds(), 2)
+        rate_limit_remaining = await github_client.fetch_rate_limit()
+
+        await mongo_client.update_crawl_log(session_id, {
+            "finished_at": finished_at,
+            "duration_seconds": duration,
+            "status": "SUCCESS",
+            "repos_crawled": len(results),
+            "new_repos_count": new_repos_count,
+            "updated_repos_count": updated_repos_count,
+            "crawled_repo_names": crawled_repo_names,
+            "github_rate_limit_remaining": rate_limit_remaining
+        })
 
         return results
