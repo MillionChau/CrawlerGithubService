@@ -57,7 +57,7 @@ class ModelEvaluator:
 
 class PerformanceTracker:
     """
-    Theo dõi sự suy giảm hiệu năng mô hình (Model Drift / Performance Degradation).
+    Theo dõi chỉ số hiệu năng và tự động phát hiện sụt giảm chất lượng mô hình (Model Performance Degradation Tracker).
     """
 
     @staticmethod
