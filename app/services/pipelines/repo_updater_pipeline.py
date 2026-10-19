@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 
 from app.db.mongo import mongo_client
 from app.core.github_client import github_client
+from app.core.crawl_control import crawl_control
 from app.services.data_cleaner import DataCleaner
 
 logger = logging.getLogger(__name__)
@@ -186,6 +187,10 @@ class RepoUpdaterPipeline:
         failed_count = 0
 
         for candidate in candidates:
+            if crawl_control.is_stop_requested():
+                logger.warning("Stop signal detected in RepoUpdaterPipeline. Halting further updates.")
+                break
+
             res = await self.update_single_repository(candidate)
             if res:
                 updated_repos.append(res)

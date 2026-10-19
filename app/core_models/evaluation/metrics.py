@@ -75,8 +75,6 @@ class PerformanceTracker:
         for key in ["mae", "rmse", "mape"]:
             if key in curr_metrics and key in prev_metrics and prev_metrics[key] > 0:
                 pct_change = ((curr_metrics[key] - prev_metrics[key]) / prev_metrics[key]) * 100.0
-            if key in current_metrics and key in previous_metrics and previous_metrics[key] > 0:
-                pct_change = ((current_metrics[key] - previous_metrics[key]) / previous_metrics[key]) * 100.0
                 if pct_change > threshold_percentage:
                     degraded = True
                     reasons.append(f"{key.upper()} increased by {pct_change:.1f}%")

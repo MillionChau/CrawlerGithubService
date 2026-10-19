@@ -274,3 +274,28 @@ async def compare_developers(dev1: str = Query(..., description="GitHub username
         }
     }
 
+
+from app.db.mongo import mongo_client
+from app.core.token_manager import token_manager
+
+
+@router.get("/system-overview", summary="Xem thống kê dữ liệu toàn hệ thống Admin (UC-81)")
+async def get_system_overview() -> Dict[str, Any]:
+    """
+    UC-81: Cung cấp số liệu tổng quan hệ thống kho mã nguồn cho Admin:
+    - Tổng số repository đã thu thập
+    - Tổng số ngôn ngữ lập trình theo dõi
+    - Phân bổ trạng thái sức khỏe (HEALTHY, MODERATE, AT_RISK, CRITICAL)
+    - Top các ngôn ngữ thịnh hành nhất
+    - Hoạt động cào dữ liệu trong 7 ngày gần nhất
+    - Trạng thái kho API tokens GitHub
+    """
+    overview = await mongo_client.get_system_overview()
+    overview["token_pool_summary"] = {
+        "total_tokens": len(token_manager.tokens),
+        "active_tokens": len([t for t in token_manager.tokens if t.status == "ACTIVE"]),
+        "rate_limited_tokens": len([t for t in token_manager.tokens if t.status == "RATE_LIMITED"])
+    }
+    return overview
+
+
