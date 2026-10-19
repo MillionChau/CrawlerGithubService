@@ -48,7 +48,7 @@ class MetricModel(Base):
 
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 
 class CrawlLogModel(BaseModel):
@@ -65,3 +65,45 @@ class CrawlLogModel(BaseModel):
     crawled_repo_names: List[str] = Field(default_factory=list)
     github_rate_limit_remaining: Optional[int] = None
     error_message: Optional[str] = None
+
+
+class TechReportModel(BaseModel):
+    id: str
+    slug: str
+    title: str
+    summary: str
+    content_markdown: str
+    category: str = "TREND"  # TREND | LANGUAGE | FRAMEWORK | DEVOPS
+    tags: List[str] = Field(default_factory=list)
+    metrics_snapshot: Optional[Dict[str, Any]] = None
+    status: str = "DRAFT"  # DRAFT | PUBLISHED | ARCHIVED
+    views_count: int = 0
+    likes_count: int = 0
+    author_id: Optional[str] = None
+    author_name: Optional[str] = "Admin"
+    created_at: datetime
+    updated_at: datetime
+    published_at: Optional[datetime] = None
+
+
+class CreateTechReportRequest(BaseModel):
+    title: str
+    summary: str
+    content_markdown: str
+    category: str = "TREND"
+    tags: List[str] = Field(default_factory=list)
+    metrics_snapshot: Optional[Dict[str, Any]] = None
+    status: Optional[str] = "DRAFT"
+    slug: Optional[str] = None
+
+
+class UpdateTechReportRequest(BaseModel):
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    content_markdown: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    metrics_snapshot: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    slug: Optional[str] = None
+
