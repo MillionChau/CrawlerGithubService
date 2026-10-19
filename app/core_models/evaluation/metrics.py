@@ -57,7 +57,7 @@ class ModelEvaluator:
 
 class PerformanceTracker:
     """
-    Theo dõi chỉ số hiệu năng và tự động phát hiện sụt giảm chất lượng mô hình (Model Performance Degradation Tracker).
+    Theo dõi sự suy giảm hiệu năng mô hình (Model Drift / Performance Degradation).
     """
 
     @staticmethod
@@ -65,7 +65,7 @@ class PerformanceTracker:
         curr_metrics: Dict[str, float],
         prev_metrics: Dict[str, float],
         threshold_percentage: float = 20.0
-    ) -> Dict[str, Any]:
+    ):
         """
         Kiểm tra xem các chỉ số lỗi (MAE, RMSE, MAPE) có tăng quá ngưỡng threshold_percentage hay không.
         """

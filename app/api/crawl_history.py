@@ -1,9 +1,45 @@
 from fastapi import APIRouter, HTTPException, Query, status
 from typing import Dict, Any, Optional, List
+from pydantic import BaseModel
 from app.db.mongo import mongo_client
 from app.db.models import CrawlLogModel
+from app.core.crawl_control import crawl_control
 
-router = APIRouter(prefix="/api/v1/crawl", tags=["Crawl History & Management (UC-76, UC-77)"])
+router = APIRouter(prefix="/api/v1/crawl", tags=["Crawl History & Management (UC-76, UC-77, UC-79)"])
+
+
+class StopCrawlRequest(BaseModel):
+    session_id: Optional[str] = None
+
+
+@router.post("/stop", summary="Dừng tiến trình cào dữ liệu GitHub đang chạy (UC-79)")
+async def stop_crawl(request: Optional[StopCrawlRequest] = None) -> Dict[str, Any]:
+    """
+    UC-79: Dừng phiên cào dữ liệu phía Admin.
+    Gửi tín hiệu Graceful Cancellation đến tiến trình cào đang thực thi.
+    Nếu truyền session_id: dừng phiên cụ thể đó.
+    Nếu không truyền: dừng toàn bộ các phiên đang hoạt động.
+    """
+    session_id = request.session_id if request else None
+    active_sessions = crawl_control.get_active_sessions()
+
+    crawl_control.request_stop(session_id=session_id)
+
+    # Nếu có session_id cụ thể, cập nhật log sang STOPPED nếu nó tồn tại
+    if session_id:
+        log = await mongo_client.get_crawl_log_by_id(session_id)
+        if log and log.get("status") == "RUNNING":
+            await mongo_client.update_crawl_log(session_id, {
+                "status": "STOPPED",
+                "error_message": "Stopped by Admin request."
+            })
+
+    return {
+        "status": "success",
+        "message": f"Stop signal emitted successfully for {'session: ' + session_id if session_id else 'all active crawl sessions'}.",
+        "target_session_id": session_id,
+        "previously_active_sessions": active_sessions
+    }
 
 
 @router.get("/history", summary="Xem danh sách lịch sử các phiên cào dữ liệu (UC-76)")

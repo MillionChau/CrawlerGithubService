@@ -12,12 +12,16 @@ from app.jobs.scheduler import (
 )
 from app.api.analytics import router as analytics_router
 from app.api.crawl_history import router as crawl_history_router
+from app.api.token_management import router as token_management_router
+from app.api.tech_reports import router as tech_reports_router
+from app.core.token_manager import token_manager
 from app.core.request_logging import RequestLoggingMiddleware
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mongo_client.connect()
+    await token_manager.initialize()
     start_scheduler()
     yield
     stop_scheduler()
@@ -32,7 +36,10 @@ app = FastAPI(
 )
 
 app.include_router(analytics_router)
+app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(crawl_history_router)
+app.include_router(token_management_router)
+app.include_router(tech_reports_router)
 
 # Request logging: thêm sau cùng => chạy ngoài cùng, log mọi request kèm thời gian phản hồi
 app.add_middleware(RequestLoggingMiddleware)
