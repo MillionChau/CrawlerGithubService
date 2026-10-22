@@ -89,7 +89,21 @@ class RepoUpdaterPipeline:
             # 1. Fetch thông tin repo mới nhất
             raw_repo = await github_client.fetch_repository(owner, repo_name)
             if not raw_repo:
-                logger.warning(f"Could not fetch repo details for '{full_name}' from GitHub API.")
+                logger.warning(f"Could not fetch repo details for '{full_name}' from GitHub API (e.g. 404 or private). Marking as synced to prevent infinite loop.")
+                now_iso = datetime.utcnow().isoformat()
+                cand_id = repo_info.get("id")
+                filter_q = {"id": cand_id} if cand_id else {"full_name": full_name}
+                update_payload = {"$set": {"last_synced_at": now_iso, "is_available": False, "sync_status": "not_found"}}
+                if mongo_client.db is not None:
+                    try:
+                        await mongo_client.db["repositories"].update_one(filter_q, update_payload)
+                    except Exception:
+                        pass
+                elif mongo_client.sync_db is not None:
+                    try:
+                        mongo_client.sync_db["repositories"].update_one(filter_q, update_payload)
+                    except Exception:
+                        pass
                 return None
 
             # 2. Fetch thông tin owner
