@@ -1,9 +1,10 @@
 import os
+import re
 import json
 import logging
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.db.mongo import mongo_client
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,129 @@ class DatabaseDataLoader:
 
         history.reverse()
         return history
+
+    @classmethod
+    async def get_aggregated_clean_language_evaluations(
+        cls,
+        languages: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Truy vấn, loại bỏ dữ liệu không sạch (Unwanted/Markup/Incomplete)
+        và nhóm các đánh giá sức khỏe theo ngôn ngữ từ collection 'language_health_evaluations'.
+        """
+        mongo_client.connect()
+        db = mongo_client.db
+
+        unwanted_langs = [
+            "Unknown", "", "None", "Jupyter Notebook", "HTML", "CSS",
+            "Shell", "Dockerfile", "Makefile", "Batchfile", "TeX",
+            "HCL", "Markdown", "Text", "PowerShell"
+        ]
+
+        match_stage: Dict[str, Any] = {
+            "language": {"$nin": unwanted_langs, "$ne": None, "$exists": True},
+            "health_score": {"$gte": 10.0, "$lte": 100.0},
+            "repository_count": {"$gte": 3}
+        }
+
+        if languages:
+            req_set = set()
+            for l in languages:
+                l_low = l.lower().strip()
+                req_set.add(l_low)
+                if l_low in ["c#", "csharp", "c sharp", "c%23"]:
+                    req_set.add("c#")
+                if l_low in ["c++", "cpp", "c plus plus", "c%2b%2b"]:
+                    req_set.add("c++")
+            escaped_patterns = [f"^{re.escape(x)}$" for x in req_set]
+            match_stage["language"] = {
+                "$nin": unwanted_langs,
+                "$regex": "|".join(escaped_patterns),
+                "$options": "i"
+            }
+
+        pipeline = [
+            {"$match": match_stage},
+            {"$sort": {"snapshot_date": 1}},
+            {
+                "$group": {
+                    "_id": "$language",
+                    "snapshots": {
+                        "$push": {
+                            "period_label": "$period_label",
+                            "snapshot_date": "$snapshot_date",
+                            "health_score": "$health_score",
+                            "health_level": "$health_level",
+                            "repository_count": "$repository_count",
+                            "total_stars": "$total_stars"
+                        }
+                    },
+                    "current_score": {"$last": "$health_score"},
+                    "health_level": {"$last": "$health_level"},
+                    "repository_count": {"$last": "$repository_count"},
+                    "total_stars": {"$last": "$total_stars"},
+                    "first_score": {"$first": "$health_score"}
+                }
+            }
+        ]
+
+        results = []
+        if db is not None:
+            try:
+                cursor = db["language_health_evaluations"].aggregate(pipeline)
+                async for doc in cursor:
+                    results.append(doc)
+            except Exception as e:
+                logger.warning(f"Error aggregating language_health_evaluations: {e}")
+
+        if not results and mongo_client.sync_db is not None:
+            try:
+                cursor = mongo_client.sync_db["language_health_evaluations"].aggregate(pipeline)
+                for doc in cursor:
+                    results.append(doc)
+            except Exception as e:
+                logger.warning(f"Sync error aggregating language_health_evaluations: {e}")
+
+        cleaned_groups = []
+        for doc in results:
+            lang_name = doc["_id"]
+            snaps = doc.get("snapshots", [])
+            if not snaps:
+                continue
+
+            pts = [round(float(s["health_score"]), 1) for s in snaps]
+            curr_score = round(float(doc.get("current_score", pts[-1])), 1)
+            first_score = round(float(doc.get("first_score", pts[0])), 1)
+            net_change = round(curr_score - first_score, 1)
+
+            if net_change > 0.5:
+                direction = "up"
+            elif net_change < -0.5:
+                direction = "down"
+            else:
+                direction = "stable"
+
+            pct_change = round((net_change / max(1.0, first_score)) * 100.0, 1)
+            growth_str = f"+{pct_change}%" if pct_change > 0 else (f"{pct_change}%" if pct_change < 0 else "0.0%")
+
+            cleaned_groups.append({
+                "language": lang_name,
+                "current_score": curr_score,
+                "health_level": doc.get("health_level", "HEALTHY"),
+                "repository_count": int(doc.get("repository_count", 0)),
+                "total_stars": int(doc.get("total_stars", 0)),
+                "direction": direction,
+                "growth": growth_str,
+                "net_change": net_change,
+                "points": pts,
+                "snapshots": snaps
+            })
+
+        cleaned_groups.sort(
+            key=lambda x: (x["repository_count"] * 1000 + x["total_stars"]),
+            reverse=True
+        )
+        return cleaned_groups
 
     @classmethod
     async def get_latest_model_performance_logs(cls, limit: int = 10) -> List[Dict[str, Any]]:

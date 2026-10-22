@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 import logging
 from datetime import datetime, timedelta
 from app.core.config import settings
@@ -421,6 +422,70 @@ class MongoDBClient:
                 r["likes_count"] = new_likes
                 return new_likes
         return 0
+
+    async def add_tech_report_comment(self, report_id: str, comment_data: dict) -> dict:
+        """Thêm bình luận cho báo cáo công nghệ."""
+        comment_id = str(uuid.uuid4())
+        doc = {
+            "id": comment_id,
+            "report_id": report_id,
+            "content": comment_data.get("content", ""),
+            "author_id": comment_data.get("author_id") or "usr-anon",
+            "author_name": comment_data.get("author_name") or "Thành viên DevRadar",
+            "author_avatar": comment_data.get("author_avatar") or "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100",
+            "likes_count": 0,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        if self.db is not None:
+            try:
+                await self.db["report_comments"].insert_one(dict(doc))
+            except Exception as e:
+                logger.warning(f"Error adding comment to MongoDB: {e}")
+        elif self.sync_db is not None:
+            try:
+                self.sync_db["report_comments"].insert_one(dict(doc))
+            except Exception as e:
+                logger.warning(f"Error sync adding comment: {e}")
+        return doc
+
+    async def get_tech_report_comments(self, report_id: str) -> list[dict]:
+        """Lấy danh sách bình luận của 1 báo cáo công nghệ."""
+        comments = []
+        if self.db is not None:
+            try:
+                cursor = self.db["report_comments"].find({"report_id": report_id}).sort("created_at", -1)
+                async for c in cursor:
+                    c["_id"] = str(c.get("_id"))
+                    comments.append(c)
+                return comments
+            except Exception as e:
+                logger.warning(f"Error getting comments from MongoDB: {e}")
+        elif self.sync_db is not None:
+            try:
+                cursor = self.sync_db["report_comments"].find({"report_id": report_id}).sort("created_at", -1)
+                for c in cursor:
+                    c["_id"] = str(c.get("_id"))
+                    comments.append(c)
+                return comments
+            except Exception as e:
+                logger.warning(f"Error sync getting comments: {e}")
+        return comments
+
+    async def delete_tech_report_comment(self, comment_id: str) -> bool:
+        """Xóa bình luận của báo cáo."""
+        if self.db is not None:
+            try:
+                res = await self.db["report_comments"].delete_one({"id": comment_id})
+                return res.deleted_count > 0
+            except Exception as e:
+                logger.warning(f"Error deleting comment from MongoDB: {e}")
+        elif self.sync_db is not None:
+            try:
+                res = self.sync_db["report_comments"].delete_one({"id": comment_id})
+                return res.deleted_count > 0
+            except Exception:
+                pass
+        return True
 
 
 mongo_client = MongoDBClient()

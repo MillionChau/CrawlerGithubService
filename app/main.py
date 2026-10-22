@@ -8,7 +8,8 @@ from app.jobs.scheduler import (
     stop_scheduler,
     scheduler,
     scheduled_crawl_job,
-    scheduled_update_existing_repos_job
+    scheduled_update_existing_repos_job,
+    scheduled_auto_generate_reports_job
 )
 from app.api.analytics import router as analytics_router
 from app.api.crawl_history import router as crawl_history_router
@@ -84,6 +85,20 @@ async def scheduler_status():
 @app.post("/scheduler/trigger-now")
 async def trigger_scheduler_now(background_tasks: BackgroundTasks):
     background_tasks.add_task(scheduled_crawl_job)
+    from app.api.analytics import log_user_activity_internal
+    try:
+        await log_user_activity_internal(
+            username="admin",
+            display_name="DevRadar Administrator",
+            role="Admin",
+            action="TRIGGER_INSTANT_CRAWL",
+            action_label="Kích hoạt cào kho mã nguồn GitHub nền ngay lập tức",
+            category="ANALYTICS",
+            target_type="CRAWLER",
+            target_name="scheduled_crawl_job"
+        )
+    except Exception:
+        pass
     return {
         "status": "success",
         "message": "Scheduled crawl job triggered in background."
@@ -93,16 +108,72 @@ async def trigger_scheduler_now(background_tasks: BackgroundTasks):
 @app.post("/scheduler/trigger-update-now")
 async def trigger_update_scheduler_now(background_tasks: BackgroundTasks):
     background_tasks.add_task(scheduled_update_existing_repos_job)
+    from app.api.analytics import log_user_activity_internal
+    try:
+        await log_user_activity_internal(
+            username="admin",
+            display_name="DevRadar Administrator",
+            role="Admin",
+            action="TRIGGER_UPDATE",
+            action_label="Kích hoạt cập nhật thông tin kho mã nguồn cũ",
+            category="ANALYTICS",
+            target_type="CRAWLER",
+            target_name="scheduled_update_existing_repos_job"
+        )
+    except Exception:
+        pass
     return {
         "status": "success",
         "message": "Scheduled existing repositories update job triggered in background."
     }
 
 
+@app.post("/scheduler/trigger-report-now")
+async def trigger_report_scheduler_now(background_tasks: BackgroundTasks):
+    """
+    Kích hoạt tiến trình tự động phân tích dữ liệu & sinh báo cáo công nghệ AI ngay lập tức trong background.
+    """
+    background_tasks.add_task(scheduled_auto_generate_reports_job)
+    from app.api.analytics import log_user_activity_internal
+    try:
+        await log_user_activity_internal(
+            username="admin",
+            display_name="DevRadar Administrator",
+            role="Admin",
+            action="GENERATE_AI_REPORT",
+            action_label="Kích hoạt AI tổng hợp Báo cáo Xu hướng Công nghệ",
+            category="ANALYTICS",
+            target_type="REPORT",
+            target_name="AI Tech Trend Report Engine"
+        )
+    except Exception:
+        pass
+    return {
+        "status": "success",
+        "message": "Scheduled AI tech report generation job triggered in background."
+    }
+
+
+
 @app.post("/crawl")
 async def trigger_crawl(query: str = "stars:>10000", max_repos: int = 5):
     pipeline = CrawlerPipeline()
     results = await pipeline.execute(query=query, max_repos=max_repos)
+    from app.api.analytics import log_user_activity_internal
+    try:
+        await log_user_activity_internal(
+            username="admin",
+            display_name="DevRadar Administrator",
+            role="Admin",
+            action="TRIGGER_CRAWL",
+            action_label=f"Cào dữ liệu kho mã nguồn theo truy vấn: {query}",
+            category="ANALYTICS",
+            target_type="CRAWLER",
+            target_name=f"Query: {query} (Max: {max_repos})",
+            details={"query": query, "processed": len(results)}
+        )
+    except Exception:
+        pass
     return {
         "status": "success",
         "processed_count": len(results),

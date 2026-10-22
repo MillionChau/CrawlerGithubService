@@ -107,3 +107,21 @@ class UpdateTechReportRequest(BaseModel):
     status: Optional[str] = None
     slug: Optional[str] = None
 
+
+class GenerateAIReportRequest(BaseModel):
+    topic: Optional[str] = None
+    category: str = "TREND"  # TREND | LANGUAGE | FRAMEWORK | DEVOPS
+    target_tech: Optional[str] = None
+    save_to_db: bool = True
+    status: str = "DRAFT"  # DRAFT | PUBLISHED
+    include_live_metrics: bool = True
+
+
+class AddReportCommentRequest(BaseModel):
+    content: str
+    author_name: Optional[str] = "Thành viên DevRadar"
+    author_avatar: Optional[str] = None
+    author_id: Optional[str] = None
+
+
+

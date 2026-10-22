@@ -17,6 +17,11 @@ DEFAULT_CRAWL_CONFIG: Dict[str, Any] = {
     "random_page_max": 10,
     "model_retrain_interval_days": 1.0,
     "daily_retrain_max_queries": 3,
+    "auto_report_enabled": True,
+    "auto_report_interval_hours": 12.0,
+    "auto_report_status": "DRAFT",
+    "auto_report_categories": ["TREND", "LANGUAGE", "FRAMEWORK", "DEVOPS"],
+    "auto_report_max_per_run": 1,
     "repository_health_weights": {
         "activity": 0.30,
         "community": 0.25,
@@ -134,3 +139,24 @@ class CrawlConfigManager:
     @classmethod
     def get_forecasting_steps(cls) -> int:
         return int(cls.load_config().get("forecasting_default_steps", 3))
+
+    @classmethod
+    def is_auto_report_enabled(cls) -> bool:
+        return bool(cls.load_config().get("auto_report_enabled", True))
+
+    @classmethod
+    def get_auto_report_interval_hours(cls) -> float:
+        return float(cls.load_config().get("auto_report_interval_hours", 12.0))
+
+    @classmethod
+    def get_auto_report_status(cls) -> str:
+        return str(cls.load_config().get("auto_report_status", "DRAFT")).upper()
+
+    @classmethod
+    def get_auto_report_categories(cls) -> List[str]:
+        return cls.load_config().get("auto_report_categories", ["TREND", "LANGUAGE", "FRAMEWORK", "DEVOPS"])
+
+    @classmethod
+    def get_auto_report_max_per_run(cls) -> int:
+        return int(cls.load_config().get("auto_report_max_per_run", 1))
+

@@ -8,8 +8,12 @@ from app.db.mongo import mongo_client
 from app.db.models import (
     TechReportModel,
     CreateTechReportRequest,
-    UpdateTechReportRequest
+    UpdateTechReportRequest,
+    GenerateAIReportRequest,
+    AddReportCommentRequest
 )
+from app.services.report_generator import report_generator
+from app.clients.ai_client import ai_client
 
 router = APIRouter(tags=["Tech Reports & CMS (UC-35..38, UC-64..68)"])
 
@@ -80,6 +84,52 @@ async def toggle_report_like(id: str, increment: bool = Query(True, description=
     }
 
 
+@router.get("/api/v1/reports/{id}/comments", summary="Lấy danh sách bình luận của báo cáo công nghệ")
+async def get_report_comments(id: str) -> Dict[str, Any]:
+    """
+    Lấy toàn bộ bình luận của bài báo cáo phân tích công nghệ.
+    """
+    comments = await mongo_client.get_tech_report_comments(id)
+    return {
+        "status": "success",
+        "report_id": id,
+        "total": len(comments),
+        "items": comments
+    }
+
+
+@router.post("/api/v1/reports/{id}/comments", summary="Gửi bình luận cho báo cáo công nghệ", status_code=status.HTTP_201_CREATED)
+async def add_report_comment(id: str, body: AddReportCommentRequest) -> Dict[str, Any]:
+    """
+    Thành viên gửi bình luận đóng góp ý kiến hoặc phản biện cho bài báo cáo công nghệ.
+    """
+    if not body.content or not body.content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nội dung bình luận không được để trống."
+        )
+
+    comment = await mongo_client.add_tech_report_comment(id, body.dict())
+    return {
+        "status": "success",
+        "message": "Bình luận đã được đăng tải thành công.",
+        "data": comment
+    }
+
+
+@router.delete("/api/v1/reports/{id}/comments/{comment_id}", summary="Xóa bình luận báo cáo công nghệ")
+async def delete_report_comment(id: str, comment_id: str) -> Dict[str, Any]:
+    """
+    Xóa bình luận khỏi bài báo cáo.
+    """
+    deleted = await mongo_client.delete_tech_report_comment(comment_id)
+    return {
+        "status": "success",
+        "message": "Bình luận đã được xóa.",
+        "deleted": deleted
+    }
+
+
 # =============================================================================
 # ADMIN CMS ENDPOINTS (UC-64 → UC-68)
 # =============================================================================
@@ -108,6 +158,113 @@ async def admin_get_reports(
         "limit": limit,
         "items": items
     }
+
+
+# =============================================================================
+# AI REPORT GENERATION & AI STATUS ENDPOINTS
+# =============================================================================
+
+@router.post("/api/v1/admin/reports/ai-generate", summary="Khởi tạo báo cáo công nghệ tự động bằng AI", status_code=status.HTTP_201_CREATED)
+async def admin_ai_generate_report(body: GenerateAIReportRequest) -> Dict[str, Any]:
+    """
+    Sử dụng UnoRouter LLM (kết hợp xoay vòng khóa AI API Key) và số liệu thu thập thực tế từ MongoDB
+    để tạo tự động một bài phân tích công nghệ chuyên sâu chuẩn Markdown.
+    Hỗ trợ cơ chế Heuristic Fallback khi AI offline hoặc chạm trần rate-limit.
+    """
+    generated = await report_generator.generate_report(
+        topic=body.topic,
+        category=body.category,
+        target_tech=body.target_tech,
+        include_live_metrics=body.include_live_metrics
+    )
+
+    now = datetime.utcnow()
+    report_id = str(uuid.uuid4())
+    report_status = (body.status or "DRAFT").upper()
+
+    report_dict = {
+        "id": report_id,
+        "slug": generated.get("slug") or generate_slug(generated.get("title")),
+        "title": generated.get("title"),
+        "summary": generated.get("summary"),
+        "content_markdown": generated.get("content_markdown"),
+        "category": generated.get("category", "TREND").upper(),
+        "tags": generated.get("tags", []),
+        "metrics_snapshot": generated.get("metrics_snapshot", {}),
+        "status": report_status,
+        "views_count": 0,
+        "likes_count": 0,
+        "author_id": "ai-assistant",
+        "author_name": "DevRadar AI Analyst",
+        "created_at": now,
+        "updated_at": now,
+        "published_at": now if report_status == "PUBLISHED" else None
+    }
+
+    if body.save_to_db:
+        await mongo_client.create_tech_report(report_dict)
+
+    return {
+        "status": "success",
+        "message": "AI tech report generated successfully.",
+        "ai_generated": generated.get("ai_generated", False),
+        "model_used": generated.get("model_used"),
+        "saved_to_db": body.save_to_db,
+        "data": report_dict
+    }
+
+
+@router.get("/api/v1/admin/reports/ai-suggestions", summary="Gợi ý các chủ đề báo cáo công nghệ nổi bật")
+async def admin_get_ai_report_suggestions() -> Dict[str, Any]:
+    """
+    Phân tích dữ liệu trong kho MongoDB để đề xuất các chủ đề báo cáo kỹ thuật 'hot' nhất
+    cho quản trị viên lựa chọn tạo bài viết.
+    """
+    overview = await mongo_client.get_system_overview()
+    top_langs = [item.get("language") for item in overview.get("top_languages", []) if item.get("language")]
+    
+    suggestions = [
+        {
+            "topic": f"Toàn cảnh hệ sinh thái {top_langs[0] if top_langs else 'Python'} và xu hướng phát triển 2026",
+            "category": "LANGUAGE",
+            "target_tech": top_langs[0] if top_langs else "Python"
+        },
+        {
+            "topic": f"So sánh hiệu năng và độ ứng dụng giữa {top_langs[1] if len(top_langs) > 1 else 'Rust'} và {top_langs[2] if len(top_langs) > 2 else 'Go'} trong Microservices",
+            "category": "TREND",
+            "target_tech": top_langs[1] if len(top_langs) > 1 else "Rust"
+        },
+        {
+            "topic": "Sự trỗi dậy của các Framework Full-stack hiện đại và tiêu chuẩn Cloud Native",
+            "category": "FRAMEWORK",
+            "target_tech": "TypeScript"
+        },
+        {
+            "topic": "Báo cáo an ninh chuỗi cung ứng và chuẩn hóa Container/DevOps cho doanh nghiệp 2026",
+            "category": "DEVOPS",
+            "target_tech": "Docker"
+        },
+        {
+            "topic": "Xu hướng mã nguồn mở trong kỷ nguyên Generative AI và Large Language Models",
+            "category": "TREND",
+            "target_tech": "AI"
+        }
+    ]
+
+    return {
+        "total_repositories_analyzed": overview.get("total_repositories", 0),
+        "top_detected_technologies": top_langs[:5],
+        "suggested_topics": suggestions
+    }
+
+
+@router.get("/api/v1/admin/ai/status", summary="Trạng thái kho khóa AI và tiến trình xoay vòng (Key Swap)")
+async def admin_get_ai_status() -> Dict[str, Any]:
+    """
+    Kiểm tra trạng thái kết nối UnoRouter AI Gateway, số lượng API Key đang kích hoạt,
+    số key đang trong hàng chờ Cooldown và nhật ký gọi thành công.
+    """
+    return ai_client.get_pool_status()
 
 
 @router.get("/api/v1/admin/reports/{id}", summary="Xem chi tiết báo cáo phía Admin (UC-65)")
@@ -266,3 +423,5 @@ async def admin_delete_report(id: str) -> Dict[str, Any]:
         "message": f"Báo cáo '{existing.get('title')}' đã được xóa hoàn toàn.",
         "deleted_id": id
     }
+
+
