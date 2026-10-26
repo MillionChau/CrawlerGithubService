@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./crawler.db"
     MONGODB_URL: str = "mongodb+srv://shopee-sentiment:MChau2506@cluster0.qlbix.mongodb.net/github-crawler"
     MONGODB_DB_NAME: str = "github-crawler"
-    
     # Github API
     GITHUB_API_URL: str = "https://api.github.com"
     GITHUB_ACCESS_TOKEN: Optional[str] = None
+    GITHUB_ACCESS_TOKEN_2: Optional[str] = None
     GITHUB_ACCESS_TOKENS: Optional[str] = None
     
     # Crawler Settings
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # External AI / LLM Gateway Config (UnoRouter / OpenAI-compatible API)
     EXTERNAL_AI_ENABLED: bool = True
     AI_API_KEY: Optional[str] = None
+    AI_API_KEY_2: Optional[str] = None
     AI_API_KEYS: Optional[str] = None
     AI_BASE_URL: str = "https://api.unorouter.com/v1"
     AI_MODEL: str = "qwen2.5-coder-32b:free"
@@ -78,5 +79,12 @@ class Settings(BaseSettings):
                     keys.append(clean_val)
         return keys
 
+=======
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+>>>>>>> Stashed changes
 
 settings = Settings()
