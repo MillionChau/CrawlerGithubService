@@ -79,12 +79,5 @@ class Settings(BaseSettings):
                     keys.append(clean_val)
         return keys
 
-=======
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
->>>>>>> Stashed changes
 
 settings = Settings()

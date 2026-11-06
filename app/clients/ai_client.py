@@ -168,7 +168,7 @@ class AIClient:
 
             try:
                 logger.info(f"[AIClient] Sending request with key {key_obj.masked} (attempt {attempts}/{max_attempts})...")
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with httpx.AsyncClient(timeout=12.0) as client:
                     res = await client.post(endpoint, json=payload, headers=headers)
 
                     if res.status_code == 200:
@@ -197,9 +197,9 @@ class AIClient:
                         continue
 
             except httpx.TimeoutException:
-                logger.warning(f"[AIClient] Request timed out after {self.timeout}s on key {key_obj.masked}.")
-                key_obj.mark_cooling(seconds=20)
-                continue
+                logger.warning(f"[AIClient] Request timed out after 12.0s on key {key_obj.masked}. Falling back to deductive engine immediately.")
+                key_obj.mark_cooling(seconds=30)
+                break
             except Exception as e:
                 logger.warning(f"[AIClient] Request failed on key {key_obj.masked}: {e}")
                 key_obj.mark_cooling(seconds=20)

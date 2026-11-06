@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import logging
 import pandas as pd
 import numpy as np
@@ -15,6 +16,10 @@ class DatabaseDataLoader:
     Module tải và tiền xử lý dữ liệu repositories thực tế từ MongoDB Atlas
     phục vụ cho việc Train / Evaluate các Core Models.
     """
+
+    _language_summary_cache: Optional[List[Dict[str, Any]]] = None
+    _language_summary_cache_time: float = 0.0
+    _CACHE_TTL: float = 300.0  # 5 phút cache in-memory
 
     @staticmethod
     async def load_repositories_from_mongo() -> List[Dict[str, Any]]:
@@ -69,7 +74,60 @@ class DatabaseDataLoader:
     async def get_language_summary(cls) -> List[Dict[str, Any]]:
         """
         Tổng hợp dữ liệu thực tế theo ngôn ngữ lập trình từ MongoDB Atlas.
+        Tối ưu qua Aggregation Pipeline trực tiếp trên MongoDB & In-Memory TTL Cache.
         """
+        now = time.time()
+        if cls._language_summary_cache is not None and (now - cls._language_summary_cache_time < cls._CACHE_TTL):
+            return cls._language_summary_cache
+
+        mongo_client.connect()
+
+        # 1. Thử aggregation trực tiếp trên MongoDB Atlas để giảm tải tối đa I/O mạng
+        if mongo_client.db is not None:
+            try:
+                pipeline = [
+                    {"$match": {"primary_language": {"$nin": [None, "", "Unknown", "Jupyter Notebook", "Shell", "HTML"]}}},
+                    {"$group": {
+                        "_id": "$primary_language",
+                        "repository_count": {"$sum": 1},
+                        "total_stars": {"$sum": {"$ifNull": ["$stars", 0]}},
+                        "total_forks": {"$sum": {"$ifNull": ["$forks", 0]}},
+                        "avg_stars": {"$avg": {"$ifNull": ["$stars", 0]}},
+                        "avg_forks": {"$avg": {"$ifNull": ["$forks", 0]}}
+                    }}
+                ]
+                cursor = mongo_client.db["repositories"].aggregate(pipeline)
+                agg_results = await cursor.to_list(length=100)
+                if agg_results:
+                    max_repos = max((r.get("repository_count", 1) for r in agg_results), default=1)
+                    max_stars = max((r.get("total_stars", 1) for r in agg_results), default=1)
+                    results = []
+                    for r in agg_results:
+                        lang = r["_id"]
+                        count = r.get("repository_count", 0)
+                        stars = r.get("total_stars", 0)
+                        forks = r.get("total_forks", 0)
+                        commit_activity = min(100.0, max(40.0, (stars / max(1.0, max_stars)) * 100.0 + 50.0))
+                        contributor_activity = min(100.0, max(45.0, (forks / max(1.0, count * 50.0)) * 100.0 + 40.0))
+                        repo_growth_rate = round(float(np.clip(0.02 + (count / max(1, max_repos)) * 0.15, 0.02, 0.25)), 4)
+                        star_growth_rate = round(float(np.clip(0.04 + (stars / max(1, max_stars)) * 0.20, 0.03, 0.30)), 4)
+                        results.append({
+                            "language": lang,
+                            "repository_count": int(count),
+                            "total_stars": int(stars),
+                            "total_forks": int(forks),
+                            "commit_activity_index": round(float(commit_activity), 2),
+                            "contributor_activity_index": round(float(contributor_activity), 2),
+                            "repo_growth_rate": repo_growth_rate,
+                            "star_growth_rate": star_growth_rate
+                        })
+                    cls._language_summary_cache = results
+                    cls._language_summary_cache_time = now
+                    return results
+            except Exception as e:
+                logger.warning(f"Error in MongoDB aggregation for language summary: {e}")
+
+        # 2. Fallback sang tính toán DataFrame qua pandas nếu aggregation không khả dụng
         repos = await cls.get_all_repositories()
         if not repos:
             return []
@@ -120,6 +178,8 @@ class DatabaseDataLoader:
                 "star_growth_rate": star_growth_rate
             })
 
+        cls._language_summary_cache = results
+        cls._language_summary_cache_time = now
         return results
 
     @classmethod

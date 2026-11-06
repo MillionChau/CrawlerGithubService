@@ -110,8 +110,10 @@ class UpdateTechReportRequest(BaseModel):
 
 class GenerateAIReportRequest(BaseModel):
     topic: Optional[str] = None
-    category: str = "TREND"  # TREND | LANGUAGE | FRAMEWORK | DEVOPS
+    category: str = "TREND"  # TREND | LANGUAGE | FRAMEWORK | DEVOPS | MONTHLY_TREND | REPOSITORY
     target_tech: Optional[str] = None
+    target_repo: Optional[str] = None
+    month_period: Optional[str] = None
     save_to_db: bool = True
     status: str = "DRAFT"  # DRAFT | PUBLISHED
     include_live_metrics: bool = True

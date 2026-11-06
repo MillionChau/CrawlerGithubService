@@ -198,31 +198,66 @@ async def scheduled_auto_generate_reports_job() -> Optional[Dict[str, Any]]:
         # 1. Thu thập danh sách chủ đề tiềm năng từ kho dữ liệu
         overview = await mongo_client.get_system_overview()
         top_langs = [item.get("language") for item in overview.get("top_languages", []) if item.get("language")]
-        categories = CrawlConfigManager.get_auto_report_categories()
+        now_dt = datetime.utcnow()
+        current_month_str = f"Tháng {now_dt.month}/{now_dt.year}"
         
         # 2. Rà soát các bài báo cáo gần đây trong MongoDB để tránh trùng lặp chủ đề
-        _, recent_reports = await mongo_client.get_tech_reports(page=1, limit=10)
+        _, recent_reports = await mongo_client.get_tech_reports(page=1, limit=15)
         recent_tags = set()
+        has_monthly_report_for_current_month = False
+        recently_evaluated_repos = set()
+
         for r in recent_reports:
             for t in r.get("tags", []):
                 recent_tags.add(t.lower())
+            if r.get("category") == "MONTHLY_TREND" and str(now_dt.month) in r.get("title", ""):
+                has_monthly_report_for_current_month = True
+            if r.get("category") == "REPOSITORY":
+                repo_ref = r.get("metrics_snapshot", {}).get("repository") or r.get("title", "")
+                recently_evaluated_repos.add(repo_ref.lower())
 
-        # 3. Lựa chọn công nghệ & chuyên mục ưu tiên
-        candidate_techs = [l for l in top_langs if l.lower() not in recent_tags]
-        target_tech = candidate_techs[0] if candidate_techs else (top_langs[0] if top_langs else "Python")
-        
-        # Chọn category luân phiên
-        category = random.choice(categories) if categories else "TREND"
+        # 3. Lựa chọn chuyên mục và chủ đề luân phiên thông minh:
+        # Ưu tiên A: Tự động xây dựng Báo cáo Tháng nếu chưa có trong tháng hiện tại
+        # Ưu tiên B: Tự động đánh giá chuyên sâu một Repository hàng đầu chưa được đánh giá gần đây
+        # Ưu tiên C: Báo cáo xu hướng ngôn ngữ / framework
+        target_repo = None
+        target_tech = None
 
-        topic = f"Báo cáo toàn cảnh xu hướng công nghệ {target_tech} và hệ sinh thái phần mềm 2026"
+        if not has_monthly_report_for_current_month:
+            category = "MONTHLY_TREND"
+            topic = f"Báo cáo Chuyển dịch Xu hướng Công nghệ & Mã nguồn mở {current_month_str}"
+        else:
+            # Chọn top repositories từ MongoDB
+            top_repos_candidates = []
+            if mongo_client.db is not None:
+                try:
+                    cursor = mongo_client.db["repositories"].find({}).sort("stars", -1).limit(10)
+                    async for doc in cursor:
+                        r_name = doc.get("full_name") or doc.get("name")
+                        if r_name and r_name.lower() not in recently_evaluated_repos:
+                            top_repos_candidates.append(r_name)
+                except Exception:
+                    pass
 
-        logger.info(f"[Auto Report Job] Selected topic: '{topic}' | Category: {category} | Target Tech: {target_tech}")
+            # Luân phiên 50% sinh Báo cáo Repository, 50% sinh Báo cáo Ngôn ngữ/Công nghệ
+            if top_repos_candidates and random.random() < 0.5:
+                category = "REPOSITORY"
+                target_repo = top_repos_candidates[0]
+                topic = f"Báo cáo Đánh giá Chuyên sâu Kiến trúc & Sức khỏe Kho mã nguồn {target_repo}"
+            else:
+                candidate_techs = [l for l in top_langs if l.lower() not in recent_tags]
+                target_tech = candidate_techs[0] if candidate_techs else (top_langs[0] if top_langs else "Python")
+                category = random.choice(["LANGUAGE", "TREND", "FRAMEWORK", "DEVOPS"])
+                topic = f"Báo cáo toàn cảnh xu hướng công nghệ {target_tech} và hệ sinh thái phần mềm 2026"
+
+        logger.info(f"[Auto Report Job] Selected topic: '{topic}' | Category: {category} | Target Tech: {target_tech} | Target Repo: {target_repo}")
 
         # 4. Kích hoạt Report Generator (AI + Live Crawler Metrics)
         generated = await report_generator.generate_report(
             topic=topic,
             category=category,
             target_tech=target_tech,
+            target_repo=target_repo,
             include_live_metrics=True
         )
 

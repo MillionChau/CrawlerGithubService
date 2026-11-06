@@ -151,25 +151,19 @@ class RepoUpdaterPipeline:
 
             clean_repo = DataCleaner.process_repo(raw_repo, clean_user, frameworks, metrics)
 
-            # Cập nhật MongoDB Atlas
+            # Cập nhật MongoDB Atlas (kèm lưu lịch sử metric)
             if mongo_client.db is not None:
                 try:
-                    await mongo_client.db["repositories"].update_one(
-                        {"id": clean_repo["id"]},
-                        {"$set": clean_repo},
-                        upsert=True
-                    )
-                    logger.info(f"✅ Updated '{clean_repo['full_name']}' in MongoDB Atlas ('repositories' collection).")
+                    _, ok = await mongo_client.upsert_repository(clean_repo)
+                    if ok:
+                        logger.info(f"✅ Updated & recorded history for '{clean_repo['full_name']}' in MongoDB Atlas.")
                 except Exception as e:
                     logger.warning(f"Failed to update '{clean_repo['full_name']}' in MongoDB Atlas: {e}")
             elif mongo_client.sync_db is not None:
                 try:
-                    mongo_client.sync_db["repositories"].update_one(
-                        {"id": clean_repo["id"]},
-                        {"$set": clean_repo},
-                        upsert=True
-                    )
-                    logger.info(f"✅ Updated '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
+                    _, ok = mongo_client.sync_upsert_repository(clean_repo)
+                    if ok:
+                        logger.info(f"✅ Updated & recorded history for '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
                 except Exception as e:
                     logger.warning(f"Failed sync update to MongoDB Atlas: {e}")
 

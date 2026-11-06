@@ -487,6 +487,116 @@ class MongoDBClient:
                 pass
         return True
 
+    async def upsert_repository(self, clean_repo: dict) -> tuple[bool, bool]:
+        """
+        Upsert repository duy nhất vào collection 'repositories'.
+        Tự động ghi đè bản ghi cũ và lưu lại biến động metric (stars, forks, open_issues) vào 'metric_history'.
+        Returns: (is_new: bool, success: bool)
+        """
+        if self.db is None:
+            return False, False
+
+        raw_id = clean_repo.get("id")
+        repo_id_str = str(raw_id) if raw_id is not None else ""
+        clean_repo["id"] = repo_id_str
+        full_name = clean_repo.get("full_name") or clean_repo.get("name")
+
+        id_conditions = []
+        if repo_id_str:
+            id_conditions.append({"id": repo_id_str})
+            if repo_id_str.isdigit():
+                id_conditions.append({"id": int(repo_id_str)})
+        if full_name:
+            id_conditions.append({"full_name": full_name})
+
+        if not id_conditions:
+            return False, False
+
+        find_filter = {"$or": id_conditions} if len(id_conditions) > 1 else id_conditions[0]
+
+        try:
+            existing = await self.db["repositories"].find_one(find_filter)
+            if existing:
+                old_synced = existing.get("last_synced_at") or existing.get("updated_at")
+                old_stars = existing.get("stars")
+                history = list(existing.get("metric_history") or [])
+                if old_stars is not None and old_synced:
+                    if not any(h.get("synced_at") == old_synced for h in history):
+                        history.append({
+                            "synced_at": old_synced,
+                            "stars": old_stars,
+                            "forks": existing.get("forks", 0),
+                            "open_issues": existing.get("open_issues", 0)
+                        })
+                clean_repo["metric_history"] = history[-50:]
+
+                await self.db["repositories"].update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": clean_repo}
+                )
+                return False, True
+            else:
+                clean_repo["metric_history"] = []
+                await self.db["repositories"].insert_one(clean_repo)
+                return True, True
+        except Exception as e:
+            logger.warning(f"Failed to upsert repository '{full_name}': {e}")
+            return False, False
+
+    def sync_upsert_repository(self, clean_repo: dict) -> tuple[bool, bool]:
+        """
+        Phiên bản đồng bộ của upsert_repository.
+        """
+        if self.sync_db is None:
+            return False, False
+
+        raw_id = clean_repo.get("id")
+        repo_id_str = str(raw_id) if raw_id is not None else ""
+        clean_repo["id"] = repo_id_str
+        full_name = clean_repo.get("full_name") or clean_repo.get("name")
+
+        id_conditions = []
+        if repo_id_str:
+            id_conditions.append({"id": repo_id_str})
+            if repo_id_str.isdigit():
+                id_conditions.append({"id": int(repo_id_str)})
+        if full_name:
+            id_conditions.append({"full_name": full_name})
+
+        if not id_conditions:
+            return False, False
+
+        find_filter = {"$or": id_conditions} if len(id_conditions) > 1 else id_conditions[0]
+
+        try:
+            existing = self.sync_db["repositories"].find_one(find_filter)
+            if existing:
+                old_synced = existing.get("last_synced_at") or existing.get("updated_at")
+                old_stars = existing.get("stars")
+                history = list(existing.get("metric_history") or [])
+                if old_stars is not None and old_synced:
+                    if not any(h.get("synced_at") == old_synced for h in history):
+                        history.append({
+                            "synced_at": old_synced,
+                            "stars": old_stars,
+                            "forks": existing.get("forks", 0),
+                            "open_issues": existing.get("open_issues", 0)
+                        })
+                clean_repo["metric_history"] = history[-50:]
+
+                self.sync_db["repositories"].update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": clean_repo}
+                )
+                return False, True
+            else:
+                clean_repo["metric_history"] = []
+                self.sync_db["repositories"].insert_one(clean_repo)
+                return True, True
+        except Exception as e:
+            logger.warning(f"Failed sync upsert repository '{full_name}': {e}")
+            return False, False
+
 
 mongo_client = MongoDBClient()
 
