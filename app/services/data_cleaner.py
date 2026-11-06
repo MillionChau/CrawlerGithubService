@@ -137,10 +137,10 @@ class DataCleaner:
         open_issues = open_issues_node.get("totalCount", 0) if isinstance(open_issues_node, dict) else 0
 
         # Owner Processing
-        owner_raw = node.get("owner", {})
-        followers_node = owner_raw.get("followers", {})
+        owner_raw = node.get("owner") or {}
+        followers_node = owner_raw.get("followers") or {}
         followers_count = followers_node.get("totalCount", 0) if isinstance(followers_node, dict) else 0
-        repos_node = owner_raw.get("repositories", {})
+        repos_node = owner_raw.get("repositories") or {}
         public_repos_count = repos_node.get("totalCount", 0) if isinstance(repos_node, dict) else 0
 
         owner_data = {
@@ -154,25 +154,32 @@ class DataCleaner:
 
         # Commits Processing
         clean_commits = []
-        target = node.get("defaultBranchRef", {}).get("target", {}) if node.get("defaultBranchRef") else {}
-        history = target.get("history", {}).get("nodes", []) if isinstance(target, dict) else []
-        for c in history:
+        dbr = node.get("defaultBranchRef") or {}
+        target = dbr.get("target") or {} if isinstance(dbr, dict) else {}
+        history = (target.get("history") or {}).get("nodes", []) if isinstance(target, dict) else []
+        for c in (history or []):
+            if not isinstance(c, dict):
+                continue
+            c_author = c.get("author") or {}
             clean_commits.append({
                 "sha": c.get("oid"),
-                "author": DataCleaner.clean_text(c.get("author", {}).get("name")),
+                "author": DataCleaner.clean_text(c_author.get("name") if isinstance(c_author, dict) else None),
                 "date": c.get("committedDate"),
                 "message": DataCleaner.clean_text(c.get("message"))
             })
 
         # Pull Requests Processing
         clean_prs = []
-        prs_nodes = node.get("pullRequests", {}).get("nodes", [])
-        for pr in prs_nodes:
+        prs_nodes = (node.get("pullRequests") or {}).get("nodes", [])
+        for pr in (prs_nodes or []):
+            if not isinstance(pr, dict):
+                continue
+            pr_author = pr.get("author") or {}
             clean_prs.append({
                 "number": pr.get("number"),
                 "title": DataCleaner.clean_text(pr.get("title")),
                 "state": pr.get("state"),
-                "author": DataCleaner.clean_text(pr.get("author", {}).get("login")),
+                "author": DataCleaner.clean_text(pr_author.get("login") if isinstance(pr_author, dict) else None),
                 "created_at": pr.get("createdAt"),
                 "merged_at": pr.get("mergedAt")
             })

@@ -11,6 +11,9 @@ class GithubClient:
     def __init__(self):
         self.base_url = settings.GITHUB_API_URL
 
+    def _create_client(self, timeout: float = 30.0) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+
     def get_headers(self, token_str: str | None = None, raw_content: bool = False) -> dict:
         headers = {
             "Accept": "application/vnd.github.v3.raw" if raw_content else "application/vnd.github.v3+json",
@@ -82,6 +85,11 @@ class GithubClient:
                         continue
                     return None
 
+                # Xử lý khi repository/resource không tồn tại hoặc bị đổi thành private (404)
+                elif response.status_code == 404:
+                    logger.info(f"ℹ️ GitHub repository or resource not found (404): {url}")
+                    return None
+
                 response.raise_for_status()
                 return response.text if raw_content else response.json()
             except httpx.HTTPStatusError as e:
@@ -95,7 +103,7 @@ class GithubClient:
 
     async def fetch_repositories(self, query: str = "stars:>1000", max_pages: int = 1, page: int = 1, sort: str = "stars"):
         all_repos = []
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             for p in range(page, page + max_pages):
                 url = f"{self.base_url}/search/repositories"
                 params = {"q": query, "sort": sort, "order": "desc", "per_page": 10, "page": p}
@@ -107,35 +115,35 @@ class GithubClient:
 
     async def fetch_repository(self, owner: str, repo: str):
         url = f"{self.base_url}/repos/{owner}/{repo}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             return await self._get(client, url)
 
     async def fetch_user(self, username: str):
         url = f"{self.base_url}/users/{username}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             return await self._get(client, url)
 
     async def fetch_repo_commits(self, owner: str, repo: str, per_page: int = 10):
         url = f"{self.base_url}/repos/{owner}/{repo}/commits"
         params = {"per_page": per_page}
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             return await self._get(client, url, params) or []
 
     async def fetch_repo_pulls(self, owner: str, repo: str, per_page: int = 10):
         url = f"{self.base_url}/repos/{owner}/{repo}/pulls"
         params = {"state": "all", "per_page": per_page}
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             return await self._get(client, url, params) or []
 
     async def fetch_repo_issues(self, owner: str, repo: str, per_page: int = 10):
         url = f"{self.base_url}/repos/{owner}/{repo}/issues"
         params = {"state": "all", "per_page": per_page}
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             return await self._get(client, url, params) or []
 
     async def fetch_repo_file_content(self, owner: str, repo: str, file_path: str):
         url = f"{self.base_url}/repos/{owner}/{repo}/contents/{file_path}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._create_client(timeout=30.0) as client:
             return await self._get(client, url, raw_content=True)
 
     async def fetch_graphql(self, query: str, variables: dict = None):
@@ -158,7 +166,7 @@ class GithubClient:
             headers = self.get_headers(token_str=token_val)
             headers["Content-Type"] = "application/json"
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with self._create_client(timeout=30.0) as client:
                 try:
                     response = await client.post(graphql_url, json=payload, headers=headers)
 
@@ -309,7 +317,7 @@ class GithubClient:
         token_entry = await token_manager.get_active_token()
         token_str = token_entry.token if token_entry else settings.GITHUB_ACCESS_TOKEN
         headers = self.get_headers(token_str=token_str)
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with self._create_client(timeout=10.0) as client:
             try:
                 response = await client.get(f"{self.base_url}/rate_limit", headers=headers)
                 if response.status_code == 200:

@@ -89,7 +89,21 @@ class RepoUpdaterPipeline:
             # 1. Fetch thông tin repo mới nhất
             raw_repo = await github_client.fetch_repository(owner, repo_name)
             if not raw_repo:
-                logger.warning(f"Could not fetch repo details for '{full_name}' from GitHub API.")
+                logger.warning(f"Could not fetch repo details for '{full_name}' from GitHub API (e.g. 404 or private). Marking as synced to prevent infinite loop.")
+                now_iso = datetime.utcnow().isoformat()
+                cand_id = repo_info.get("id")
+                filter_q = {"id": cand_id} if cand_id else {"full_name": full_name}
+                update_payload = {"$set": {"last_synced_at": now_iso, "is_available": False, "sync_status": "not_found"}}
+                if mongo_client.db is not None:
+                    try:
+                        await mongo_client.db["repositories"].update_one(filter_q, update_payload)
+                    except Exception:
+                        pass
+                elif mongo_client.sync_db is not None:
+                    try:
+                        mongo_client.sync_db["repositories"].update_one(filter_q, update_payload)
+                    except Exception:
+                        pass
                 return None
 
             # 2. Fetch thông tin owner
@@ -137,25 +151,19 @@ class RepoUpdaterPipeline:
 
             clean_repo = DataCleaner.process_repo(raw_repo, clean_user, frameworks, metrics)
 
-            # Cập nhật MongoDB Atlas
+            # Cập nhật MongoDB Atlas (kèm lưu lịch sử metric)
             if mongo_client.db is not None:
                 try:
-                    await mongo_client.db["repositories"].update_one(
-                        {"id": clean_repo["id"]},
-                        {"$set": clean_repo},
-                        upsert=True
-                    )
-                    logger.info(f"✅ Updated '{clean_repo['full_name']}' in MongoDB Atlas ('repositories' collection).")
+                    _, ok = await mongo_client.upsert_repository(clean_repo)
+                    if ok:
+                        logger.info(f"✅ Updated & recorded history for '{clean_repo['full_name']}' in MongoDB Atlas.")
                 except Exception as e:
                     logger.warning(f"Failed to update '{clean_repo['full_name']}' in MongoDB Atlas: {e}")
             elif mongo_client.sync_db is not None:
                 try:
-                    mongo_client.sync_db["repositories"].update_one(
-                        {"id": clean_repo["id"]},
-                        {"$set": clean_repo},
-                        upsert=True
-                    )
-                    logger.info(f"✅ Updated '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
+                    _, ok = mongo_client.sync_upsert_repository(clean_repo)
+                    if ok:
+                        logger.info(f"✅ Updated & recorded history for '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
                 except Exception as e:
                     logger.warning(f"Failed sync update to MongoDB Atlas: {e}")
 

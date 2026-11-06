@@ -1,24 +1,34 @@
 {
-  "crawl_interval_minutes": 1.5,
-  "max_repos_per_job": 5,
-  "update_interval_minutes": 3.0,
-  "update_batch_size": 5,
-  "min_stars": 5,
-  "max_stars": 5000,
+  "crawl_interval_minutes": 1.0,
+  "max_repos_per_job": 50,
+  "update_interval_minutes": 2.0,
+  "update_batch_size": 45,
+  "min_stars": 50,
+  "max_stars": 30000,
   "random_page_max": 10,
-  "model_retrain_interval_days": 1.0,
+  "model_retrain_interval_days": 1.1,
   "daily_retrain_max_queries": 3,
+  "auto_report_enabled": true,
+  "auto_report_interval_hours": 12.0,
+  "auto_report_status": "DRAFT",
+  "auto_report_categories": [
+    "TREND",
+    "LANGUAGE",
+    "FRAMEWORK",
+    "DEVOPS"
+  ],
+  "auto_report_max_per_run": 1,
   "repository_health_weights": {
-    "activity": 0.30,
+    "activity": 0.3,
     "community": 0.25,
     "maintenance": 0.25,
-    "growth": 0.20
+    "growth": 0.2
   },
   "language_health_weights": {
     "density": 0.25,
     "popularity": 0.35,
-    "ecosystem": 0.20,
-    "growth": 0.20
+    "ecosystem": 0.2,
+    "growth": 0.2
   },
   "forecasting_default_steps": 3,
   "queries": [
@@ -46,8 +56,6 @@
     "topic:ai stars:>10"
   ],
   "sort_options": [
-    "updated",
-    "stars",
-    "forks"
+    "updated"
   ]
 }

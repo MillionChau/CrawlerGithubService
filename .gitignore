@@ -168,3 +168,13 @@ cython_debug/
 # DevRadar specific
 crawler.db
 crawled_data.json
+
+# Local scripts & data sync (AI generated)
+check_data.py
+seed_and_sync_evaluations.py
+sync_local_to_cloud.py
+
+# Documentation
+*.md
+!README.md
+

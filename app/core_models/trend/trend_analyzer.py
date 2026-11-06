@@ -13,11 +13,12 @@ class TechnologyTrendAnalyzer:
         self.feature_extractor = TrendFeatureExtractor()
 
     def classify_trend(self, growth_rate: float, momentum: float) -> str:
-        if growth_rate > 0.15 and momentum > 0.2:
+        # Chuẩn hóa ngưỡng tăng trưởng theo chu kỳ tháng (Monthly Basis)
+        if growth_rate > 0.015 and momentum > 0.01:
             return "EMERGING"
-        elif growth_rate > 0.03:
+        elif growth_rate > 0.003:
             return "GROWING"
-        elif growth_rate >= -0.03:
+        elif growth_rate >= -0.003:
             return "STABLE"
         else:
             return "DECLINING"

@@ -166,39 +166,31 @@ class CrawlerPipeline:
 
         try:
             # -------------------------------------------------------------
-            # Lưu / Upsert dữ liệu duy nhất vào MongoDB Atlas
+            # Lưu / Upsert dữ liệu duy nhất vào MongoDB Atlas (kèm lưu lịch sử metric)
             # -------------------------------------------------------------
             for clean_repo in results:
                 if mongo_client.db is not None:
                     try:
-                        existing = await mongo_client.db["repositories"].find_one({"id": clean_repo["id"]})
-                        res = await mongo_client.db["repositories"].update_one(
-                            {"id": clean_repo["id"]},
-                            {"$set": clean_repo},
-                            upsert=True
-                        )
-                        if existing is None and res.upserted_id:
-                            new_repos_count += 1
-                            logger.info(f"[NEW REPO] Saved '{clean_repo['full_name']}' into MongoDB Atlas ('repositories' collection).")
-                        else:
-                            updated_repos_count += 1
-                            logger.info(f"[UPDATED REPO] Updated '{clean_repo['full_name']}' in MongoDB Atlas ('repositories' collection).")
+                        is_new, ok = await mongo_client.upsert_repository(clean_repo)
+                        if ok:
+                            if is_new:
+                                new_repos_count += 1
+                                logger.info(f"[NEW REPO] Saved '{clean_repo['full_name']}' into MongoDB Atlas ('repositories' collection).")
+                            else:
+                                updated_repos_count += 1
+                                logger.info(f"[UPDATED REPO] Overwritten & synced history for '{clean_repo['full_name']}' in MongoDB Atlas.")
                     except Exception as e:
-                        logger.warning(f"Failed to upsert repo '{clean_repo['full_name']}' to MongoDB Atlas: {e}")
+                        logger.warning(f"Failed to upsert repo '{clean_repo.get('full_name')}': {e}")
                 elif mongo_client.sync_db is not None:
                     try:
-                        existing = mongo_client.sync_db["repositories"].find_one({"id": clean_repo["id"]})
-                        mongo_client.sync_db["repositories"].update_one(
-                            {"id": clean_repo["id"]},
-                            {"$set": clean_repo},
-                            upsert=True
-                        )
-                        if existing is None:
-                            new_repos_count += 1
-                            logger.info(f"[NEW REPO] Saved '{clean_repo['full_name']}' into MongoDB Atlas (Sync Mode).")
-                        else:
-                            updated_repos_count += 1
-                            logger.info(f"[UPDATED REPO] Updated '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
+                        is_new, ok = mongo_client.sync_upsert_repository(clean_repo)
+                        if ok:
+                            if is_new:
+                                new_repos_count += 1
+                                logger.info(f"[NEW REPO] Saved '{clean_repo['full_name']}' into MongoDB Atlas (Sync Mode).")
+                            else:
+                                updated_repos_count += 1
+                                logger.info(f"[UPDATED REPO] Overwritten & synced history for '{clean_repo['full_name']}' in MongoDB Atlas (Sync Mode).")
                     except Exception as e:
                         logger.warning(f"Failed sync upsert to MongoDB Atlas: {e}")
                 else:

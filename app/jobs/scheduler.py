@@ -5,6 +5,8 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+import uuid
+from typing import Optional, Dict, Any
 from app.core.config import settings
 from app.core.crawl_config import CrawlConfigManager
 from app.services.pipelines.crawler_pipeline import CrawlerPipeline
@@ -15,6 +17,8 @@ from app.core_models.health.language_health import LanguageHealthModel
 from app.core_models.forecasting.forecasting_service import ForecastingService
 from app.core_models.evaluation.metrics import ModelEvaluator, PerformanceTracker
 from app.core_models.persistence.model_manager import ModelManager
+from app.db.mongo import mongo_client
+from app.services.report_generator import report_generator, generate_clean_slug
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -177,18 +181,145 @@ async def scheduled_daily_train_job():
         logger.error(err_msg, exc_info=True)
 
 
+async def scheduled_auto_generate_reports_job() -> Optional[Dict[str, Any]]:
+    """
+    Job chạy định kỳ (12h/24h) tự động phân tích dữ liệu kho mã nguồn MongoDB Atlas
+    và kích hoạt UnoRouter AI / Heuristic Generator để sinh bài báo cáo công nghệ mới.
+    """
+    if not CrawlConfigManager.is_auto_report_enabled():
+        logger.info("[Auto Report Job] Tự động sinh báo cáo đang tạm tắt (auto_report_enabled=False).")
+        return None
+
+    msg = f"[{datetime.now()}] 🧠 Triggering SCHEDULED AUTO TECH REPORT GENERATION JOB..."
+    print(msg)
+    logger.info(msg)
+
+    try:
+        # 1. Thu thập danh sách chủ đề tiềm năng từ kho dữ liệu
+        overview = await mongo_client.get_system_overview()
+        top_langs = [item.get("language") for item in overview.get("top_languages", []) if item.get("language")]
+        now_dt = datetime.utcnow()
+        current_month_str = f"Tháng {now_dt.month}/{now_dt.year}"
+        
+        # 2. Rà soát các bài báo cáo gần đây trong MongoDB để tránh trùng lặp chủ đề
+        _, recent_reports = await mongo_client.get_tech_reports(page=1, limit=15)
+        recent_tags = set()
+        has_monthly_report_for_current_month = False
+        recently_evaluated_repos = set()
+
+        for r in recent_reports:
+            for t in r.get("tags", []):
+                recent_tags.add(t.lower())
+            if r.get("category") == "MONTHLY_TREND" and str(now_dt.month) in r.get("title", ""):
+                has_monthly_report_for_current_month = True
+            if r.get("category") == "REPOSITORY":
+                repo_ref = r.get("metrics_snapshot", {}).get("repository") or r.get("title", "")
+                recently_evaluated_repos.add(repo_ref.lower())
+
+        # 3. Lựa chọn chuyên mục và chủ đề luân phiên thông minh:
+        # Ưu tiên A: Tự động xây dựng Báo cáo Tháng nếu chưa có trong tháng hiện tại
+        # Ưu tiên B: Tự động đánh giá chuyên sâu một Repository hàng đầu chưa được đánh giá gần đây
+        # Ưu tiên C: Báo cáo xu hướng ngôn ngữ / framework
+        target_repo = None
+        target_tech = None
+
+        if not has_monthly_report_for_current_month:
+            category = "MONTHLY_TREND"
+            topic = f"Báo cáo Chuyển dịch Xu hướng Công nghệ & Mã nguồn mở {current_month_str}"
+        else:
+            # Chọn top repositories từ MongoDB
+            top_repos_candidates = []
+            if mongo_client.db is not None:
+                try:
+                    cursor = mongo_client.db["repositories"].find({}).sort("stars", -1).limit(10)
+                    async for doc in cursor:
+                        r_name = doc.get("full_name") or doc.get("name")
+                        if r_name and r_name.lower() not in recently_evaluated_repos:
+                            top_repos_candidates.append(r_name)
+                except Exception:
+                    pass
+
+            # Luân phiên 50% sinh Báo cáo Repository, 50% sinh Báo cáo Ngôn ngữ/Công nghệ
+            if top_repos_candidates and random.random() < 0.5:
+                category = "REPOSITORY"
+                target_repo = top_repos_candidates[0]
+                topic = f"Báo cáo Đánh giá Chuyên sâu Kiến trúc & Sức khỏe Kho mã nguồn {target_repo}"
+            else:
+                candidate_techs = [l for l in top_langs if l.lower() not in recent_tags]
+                target_tech = candidate_techs[0] if candidate_techs else (top_langs[0] if top_langs else "Python")
+                category = random.choice(["LANGUAGE", "TREND", "FRAMEWORK", "DEVOPS"])
+                topic = f"Báo cáo toàn cảnh xu hướng công nghệ {target_tech} và hệ sinh thái phần mềm 2026"
+
+        logger.info(f"[Auto Report Job] Selected topic: '{topic}' | Category: {category} | Target Tech: {target_tech} | Target Repo: {target_repo}")
+
+        # 4. Kích hoạt Report Generator (AI + Live Crawler Metrics)
+        generated = await report_generator.generate_report(
+            topic=topic,
+            category=category,
+            target_tech=target_tech,
+            target_repo=target_repo,
+            include_live_metrics=True
+        )
+
+        now = datetime.utcnow()
+        report_id = str(uuid.uuid4())
+        report_status = CrawlConfigManager.get_auto_report_status()
+
+        report_dict = {
+            "id": report_id,
+            "slug": generated.get("slug") or generate_clean_slug(generated.get("title")),
+            "title": generated.get("title"),
+            "summary": generated.get("summary"),
+            "content_markdown": generated.get("content_markdown"),
+            "category": generated.get("category", category).upper(),
+            "tags": generated.get("tags", []),
+            "metrics_snapshot": generated.get("metrics_snapshot", {}),
+            "status": report_status,
+            "views_count": 0,
+            "likes_count": 0,
+            "author_id": "ai-scheduler",
+            "author_name": "DevRadar AI Analyst (Auto Scheduled)",
+            "created_at": now,
+            "updated_at": now,
+            "published_at": now if report_status == "PUBLISHED" else None
+        }
+
+        # 5. Lưu vào MongoDB Atlas
+        await mongo_client.create_tech_report(report_dict)
+
+        success_msg = (
+            f"[{datetime.now()}] ✅ AUTO TECH REPORT GENERATED & SAVED SUCCESSFULLY!\n"
+            f"   - Title: {report_dict['title']}\n"
+            f"   - Slug: {report_dict['slug']}\n"
+            f"   - Status: {report_dict['status']}\n"
+            f"   - AI Generated: {generated.get('ai_generated')}\n"
+            f"   - Model: {generated.get('model_used')}"
+        )
+        print(success_msg)
+        logger.info(success_msg)
+        return report_dict
+
+    except Exception as e:
+        err_msg = f"Error during Scheduled Auto Tech Report Job: {e}"
+        print(err_msg)
+        logger.error(err_msg, exc_info=True)
+        return None
+
 
 def start_scheduler():
-    """Khởi động APScheduler với Job Cào dữ liệu định kỳ, Job Cập nhật Repo cũ & Job Daily Retrain Models Hàng Ngày."""
+    """Khởi động APScheduler với Job Cào dữ liệu định kỳ, Job Cập nhật Repo cũ, Job Retrain Models & Job Sinh Báo Cáo AI Tự Động."""
     crawl_interval_minutes = CrawlConfigManager.get_interval_minutes()
     update_interval_minutes = CrawlConfigManager.get_update_interval_minutes()
     retrain_interval_days = CrawlConfigManager.get_model_retrain_interval_days()
+    auto_report_hours = CrawlConfigManager.get_auto_report_interval_hours()
+    auto_report_active = CrawlConfigManager.is_auto_report_enabled()
     
     start_msg = (
         f"Starting APScheduler:\n"
         f"  - Periodic Crawl Job: Every {crawl_interval_minutes} mins\n"
         f"  - Periodic Existing Repos Update Job: Every {update_interval_minutes} mins\n"
-        f"  - Daily Model Retrain Job: Every {retrain_interval_days} days"
+        f"  - Daily Model Retrain Job: Every {retrain_interval_days} days\n"
+        f"  - Auto AI Tech Report Job: {'Every ' + str(auto_report_hours) + ' hours' if auto_report_active else 'DISABLED'}"
     )
     print(start_msg)
     logger.info(start_msg)
@@ -221,8 +352,59 @@ def start_scheduler():
         replace_existing=True
     )
 
+    # 4. Job Tự động sinh báo cáo phân tích công nghệ AI định kỳ
+    if auto_report_active:
+        scheduler.add_job(
+            scheduled_auto_generate_reports_job,
+            trigger=IntervalTrigger(hours=auto_report_hours),
+            id="github_auto_report_job",
+            name="AI Periodic Tech Report Generation Job",
+            replace_existing=True
+        )
+
     scheduler.start()
-    logger.info(f"APScheduler started successfully with 3 active cronjobs.")
+    total_jobs = len(scheduler.get_jobs())
+    logger.info(f"APScheduler started successfully with {total_jobs} active cronjobs.")
+
+
+def reschedule_jobs():
+    """
+    Cập nhật động chu kỳ lập lịch của các cronjob đang chạy mà không cần khởi động lại service.
+    Được gọi ngay khi Admin lưu cấu hình crawl_config.json mới.
+    """
+    if not scheduler.running:
+        return
+
+    crawl_interval_minutes = CrawlConfigManager.get_interval_minutes()
+    update_interval_minutes = CrawlConfigManager.get_update_interval_minutes()
+    retrain_interval_days = CrawlConfigManager.get_model_retrain_interval_days()
+    auto_report_hours = CrawlConfigManager.get_auto_report_interval_hours()
+    auto_report_active = CrawlConfigManager.is_auto_report_enabled()
+
+    try:
+        scheduler.reschedule_job("github_crawler_job", trigger=IntervalTrigger(minutes=crawl_interval_minutes))
+        logger.info(f"Rescheduled github_crawler_job to every {crawl_interval_minutes} mins.")
+    except Exception as e:
+        logger.warning(f"Could not reschedule github_crawler_job: {e}")
+
+    try:
+        scheduler.reschedule_job("github_update_existing_repos_job", trigger=IntervalTrigger(minutes=update_interval_minutes))
+        logger.info(f"Rescheduled github_update_existing_repos_job to every {update_interval_minutes} mins.")
+    except Exception as e:
+        logger.warning(f"Could not reschedule github_update_existing_repos_job: {e}")
+
+    try:
+        scheduler.reschedule_job("github_daily_train_job", trigger=IntervalTrigger(days=retrain_interval_days))
+        logger.info(f"Rescheduled github_daily_train_job to every {retrain_interval_days} days.")
+    except Exception as e:
+        logger.warning(f"Could not reschedule github_daily_train_job: {e}")
+
+    if auto_report_active:
+        try:
+            scheduler.reschedule_job("github_auto_report_job", trigger=IntervalTrigger(hours=auto_report_hours))
+            logger.info(f"Rescheduled github_auto_report_job to every {auto_report_hours} hours.")
+        except Exception:
+            pass
 
 
 def stop_scheduler():

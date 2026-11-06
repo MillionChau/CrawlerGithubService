@@ -34,6 +34,22 @@ async def stop_crawl(request: Optional[StopCrawlRequest] = None) -> Dict[str, An
                 "error_message": "Stopped by Admin request."
             })
 
+    from app.api.analytics import log_user_activity_internal
+    try:
+        await log_user_activity_internal(
+            username="admin",
+            display_name="DevRadar Administrator",
+            role="Admin",
+            action="STOP_CRAWL",
+            action_label=f"Dừng phiên cào dữ liệu GitHub {'(' + session_id + ')' if session_id else '(Toàn bộ phiên đang chạy)'}",
+            category="SYSTEM",
+            target_type="CRAWLER_SESSION",
+            target_name=session_id or "All Sessions",
+            details={"stopped_sessions": active_sessions}
+        )
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "message": f"Stop signal emitted successfully for {'session: ' + session_id if session_id else 'all active crawl sessions'}.",
