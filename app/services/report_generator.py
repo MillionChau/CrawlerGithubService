@@ -622,7 +622,7 @@ Dựa trên dữ liệu cào chuyên sâu từ GitHub API và các mô hình h�
 | **Tần suất Hoạt động (Activity Frequency)** | `{components.get('activity_frequency', 75)}` | {'Rất tích cực' if components.get('activity_frequency', 75) >= 80 else 'Bình thường'} | Nhịp độ commit đều đặn qua các tuần, duy trì khả năng giải quyết issues tồn đọng. |
 | **Hỗ trợ Cộng đồng (Community Support)** | `{components.get('community_support', 85)}` | Lan tỏa mạnh | Mạng lưới contributors đa dạng, giảm thiểu rủi ro phụ thuộc vào một cá nhân (Bus Factor). |
 | **Chiều sâu Kỹ thuật (Technical Depth)** | `{components.get('technical_depth', 80)}` | Chuẩn mực | Khả năng module hóa, độ phức tạp kiến trúc và mức độ tích hợp các chuẩn hiện đại. |
-| **Danh tiếng Dự án (Project Reputation)** | `{components.get('project_reputation', 90)}` | Uy tín cao | Tác động lan tỏa trong cộng đồng open-source với `{stars:,}` ⭐ và `{forks:,}` 🍴. |
+| **Danh tiếng Dự án (Project Reputation)** | `{components.get('project_reputation', 90)}` | Uy tín cao | Tác động lan tỏa trong cộng đồng open-source với `{stars:,}` stars và `{forks:,}` forks. |
 
 ---
 
@@ -699,14 +699,14 @@ Thay vì chỉ nhìn vào số lượng Stars bề nổi, DevRadar Agent đi sâ
             for idx, g in enumerate(gainers, 1):
                 gainers_md += (
                     f"{idx}. **{g['language']}**: Tăng trưởng **+{g['growth_rate_pct']}%** trong tháng | "
-                    f"⭐ `{g['total_stars']:,}` stars | Điểm sức khỏe: `{g['health_score']}/100` ({g['health_level']})\n"
+                    f"`{g['total_stars']:,}` stars | Điểm sức khỏe: `{g['health_score']}/100` ({g['health_level']})\n"
                 )
 
             leaders_md = ""
             for idx, l in enumerate(leaders, 1):
                 leaders_md += (
                     f"{idx}. **{l['language']}**: Thị phần chi phối với `{l['repo_count']:,}` repos | "
-                    f"⭐ `{l['total_stars']:,}` stars | Tăng trưởng duy trì: `+{l['growth_rate_pct']}%`\n"
+                    f"`{l['total_stars']:,}` stars | Tăng trưởng duy trì: `+{l['growth_rate_pct']}%`\n"
                 )
 
             cooling_md = ""
@@ -725,7 +725,7 @@ Thay vì chỉ nhìn vào số lượng Stars bề nổi, DevRadar Agent đi sâ
             content_markdown = f"""# {title}
 
 > **Executive Summary:** {summary}  
-> **Kỳ báo cáo:** {period_str} | **Tập dữ liệu khảo sát:** `{total_repos:,}` repositories & `{total_stars:,}` ⭐  
+> **Kỳ báo cáo:** {period_str} | **Tập dữ liệu khảo sát:** `{total_repos:,}` repositories & `{total_stars:,}` stars  
 > **Cơ chế suy luận:** DevRadar Trend Shift Analyzer & Multi-Factor Intelligence Engine
 
 ---
@@ -817,7 +817,7 @@ Dựa trên phân tích hồi quy và tốc độ chuyển dịch trong tháng, 
 
         top_repos_md = ""
         for i, r in enumerate(top_repos, 1):
-            top_repos_md += f"{i}. **{r.get('full_name')}** (`{r.get('language')}`): ⭐ `{r.get('stars'):,}` stars | 🍴 `{r.get('forks'):,}` forks\n   - *Mô tả:* {r.get('description')}\n"
+            top_repos_md += f"{i}. **{r.get('full_name')}** (`{r.get('language')}`): `{r.get('stars'):,}` stars | `{r.get('forks'):,}` forks\n   - *Mô tả:* {r.get('description')}\n"
 
         if not top_repos_md:
             top_repos_md = "- Đang liên tục cập nhật thêm kho mã nguồn đại diện.\n"
@@ -849,8 +849,8 @@ DevRadar Agent phân tích toàn diện hệ sinh thái **{tech_label}** thông 
 Theo số liệu đo lường trực tiếp từ kho lưu trữ:
 
 - **Tổng số kho mã nguồn đại diện:** `{matching_count:,}` repositories
-- **Tổng lượng sao (Stargazers) tích lũy:** `{total_stars:,}` ⭐
-- **Tổng số lượt phân nhánh (Forks):** `{total_forks:,}` 🍴
+- **Tổng lượng sao (Stargazers) tích lũy:** `{total_stars:,}` stars
+- **Tổng số lượt phân nhánh (Forks):** `{total_forks:,}` forks
 - **Tỷ lệ Tương tác Thực chất (Fork-to-Star Ratio):** `{fork_to_star}%`
 - **Điểm Sức khỏe Trung bình Hệ sinh thái (Avg Health Score):** `{avg_health}/100`
 

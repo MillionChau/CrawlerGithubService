@@ -53,6 +53,25 @@ class MongoDBClient:
         if self.sync_client:
             self.sync_client.close()
 
+    async def ensure_indexes(self):
+        """Khởi tạo background indexes tối ưu hóa cho các truy vấn tổng hợp và tra cứu sức khỏe."""
+        if self.db is not None:
+            try:
+                await self.db["repositories"].create_index(
+                    [("primary_language", 1), ("updated_at", -1), ("stars", -1)],
+                    background=True
+                )
+                await self.db["language_health_evaluations"].create_index(
+                    [("language", 1), ("snapshot_date", 1)],
+                    background=True
+                )
+                await self.db["repository_health_evaluations"].create_index(
+                    [("repository", 1), ("snapshot_date", 1)],
+                    background=True
+                )
+            except Exception as e:
+                logger.warning(f"Could not create Mongo background indexes: {e}")
+
     async def create_crawl_log(self, log_data: dict) -> str:
         """Lưu bản ghi phiên cào mới vào collection 'crawl_logs'."""
         session_id = log_data.get("session_id")
