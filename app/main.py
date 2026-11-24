@@ -22,6 +22,7 @@ from app.core.request_logging import RequestLoggingMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mongo_client.connect()
+    await mongo_client.ensure_indexes()
     await token_manager.initialize()
     start_scheduler()
     yield

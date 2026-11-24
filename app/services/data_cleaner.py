@@ -1,6 +1,6 @@
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 class DataCleaner:
     @staticmethod
@@ -93,7 +93,66 @@ class DataCleaner:
         }
 
     @staticmethod
+    def compute_activity_and_maturity(commits: list, pulls: list, created_at_str: str) -> tuple:
+        """
+        Tính toán các trường phái sinh (derived fields) phục vụ đo lường Flow & Age:
+        - is_mature: created_at <= now - 30 days
+        - activity_stats: commits_90d, has_commit_90d, last_commit_date, prs_merged_90d
+        """
+        now = datetime.now(timezone.utc)
+        d30 = now - timedelta(days=30)
+        d90 = now - timedelta(days=90)
+
+        is_mature = True
+        if created_at_str:
+            try:
+                c_dt = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                is_mature = (c_dt <= d30)
+            except Exception:
+                is_mature = True
+
+        commits_90d = 0
+        last_commit_date = None
+        for c in (commits or []):
+            c_date_str = c.get("date")
+            if not c_date_str and isinstance(c.get("commit"), dict):
+                c_date_str = c.get("commit", {}).get("author", {}).get("date")
+            if c_date_str:
+                if not last_commit_date or c_date_str > last_commit_date:
+                    last_commit_date = c_date_str
+                try:
+                    c_dt = datetime.fromisoformat(c_date_str.replace('Z', '+00:00'))
+                    if c_dt >= d90:
+                        commits_90d += 1
+                except Exception:
+                    pass
+
+        prs_merged_90d = 0
+        for p in (pulls or []):
+            m_date_str = p.get("merged_at") or p.get("mergedAt")
+            if m_date_str:
+                try:
+                    m_dt = datetime.fromisoformat(m_date_str.replace('Z', '+00:00'))
+                    if m_dt >= d90:
+                        prs_merged_90d += 1
+                except Exception:
+                    pass
+
+        activity_stats = {
+            "commits_90d": commits_90d,
+            "has_commit_90d": commits_90d > 0,
+            "last_commit_date": last_commit_date,
+            "prs_merged_90d": prs_merged_90d
+        }
+        return is_mature, activity_stats
+
+    @staticmethod
     def process_repo(raw_repo: dict, owner_data: dict, frameworks: list, metrics: dict) -> dict:
+        created_at_val = raw_repo.get("created_at")
+        commits_list = metrics.get("commits", [])
+        pulls_list = metrics.get("pulls", [])
+        is_mature, act_stats = DataCleaner.compute_activity_and_maturity(commits_list, pulls_list, created_at_val)
+
         return {
             "id": str(raw_repo.get("id")),
             "name": DataCleaner.clean_text(raw_repo.get("name")),
@@ -104,13 +163,18 @@ class DataCleaner:
             "forks": raw_repo.get("forks_count", 0),
             "open_issues": raw_repo.get("open_issues_count", 0),
             "visibility": raw_repo.get("visibility"),
-            "created_at": raw_repo.get("created_at"),
+            "created_at": created_at_val,
             "updated_at": raw_repo.get("updated_at"),
-            "last_synced_at": datetime.now().isoformat(),
+            "pushed_at": raw_repo.get("pushed_at") or raw_repo.get("updated_at"),
+            "is_fork": bool(raw_repo.get("fork", False)),
+            "is_archived": bool(raw_repo.get("archived", False)),
+            "is_mature": is_mature,
+            "activity_stats": act_stats,
+            "last_synced_at": datetime.now(timezone.utc).isoformat(),
             "owner": owner_data,
             "detected_frameworks": frameworks,
-            "recent_commits": metrics.get("commits", []),
-            "recent_pull_requests": metrics.get("pulls", []),
+            "recent_commits": commits_list,
+            "recent_pull_requests": pulls_list,
             "recent_issues": metrics.get("issues", [])
         }
 
@@ -189,6 +253,9 @@ class DataCleaner:
         req_text = node.get("requirementsTxt", {}).get("text") if isinstance(node.get("requirementsTxt"), dict) else None
         frameworks = DataCleaner.detect_frameworks(pkg_text, None, req_text)
 
+        created_at_val = node.get("createdAt")
+        is_mature, act_stats = DataCleaner.compute_activity_and_maturity(clean_commits, clean_prs, created_at_val)
+
         return {
             "id": str(database_id),
             "name": name,
@@ -199,8 +266,14 @@ class DataCleaner:
             "forks": forks,
             "open_issues": open_issues,
             "visibility": node.get("visibility", "PUBLIC"),
-            "created_at": node.get("createdAt"),
+            "created_at": created_at_val,
             "updated_at": node.get("updatedAt"),
+            "pushed_at": node.get("pushedAt") or node.get("updatedAt"),
+            "is_fork": bool(node.get("isFork", False)),
+            "is_archived": bool(node.get("isArchived", False)),
+            "is_mature": is_mature,
+            "activity_stats": act_stats,
+            "last_synced_at": datetime.now(timezone.utc).isoformat(),
             "owner": owner_data,
             "detected_frameworks": frameworks,
             "recent_commits": clean_commits,

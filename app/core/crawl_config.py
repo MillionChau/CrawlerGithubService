@@ -29,10 +29,10 @@ DEFAULT_CRAWL_CONFIG: Dict[str, Any] = {
         "growth": 0.20
     },
     "language_health_weights": {
-        "density": 0.25,
-        "popularity": 0.35,
-        "ecosystem": 0.20,
-        "growth": 0.20
+        "density": 0.15,
+        "popularity": 0.25,
+        "ecosystem": 0.35,
+        "growth": 0.25
     },
     "forecasting_default_steps": 3,
     "queries": [

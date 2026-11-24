@@ -25,10 +25,10 @@
     "growth": 0.2
   },
   "language_health_weights": {
-    "density": 0.25,
-    "popularity": 0.35,
-    "ecosystem": 0.2,
-    "growth": 0.2
+    "density": 0.15,
+    "popularity": 0.25,
+    "ecosystem": 0.35,
+    "growth": 0.25
   },
   "forecasting_default_steps": 3,
   "queries": [

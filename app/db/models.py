@@ -126,4 +126,89 @@ class AddReportCommentRequest(BaseModel):
     author_id: Optional[str] = None
 
 
+# =============================================================================
+# LANGUAGE HEALTH V3 SCHEMAS (SPECIFICATION V3)
+# =============================================================================
+
+class StockMetrics(BaseModel):
+    repository_count: int = Field(ge=0)
+    total_stars: int = Field(ge=0)
+    total_forks: int = Field(ge=0)
+    repo_market_share_pct: float = Field(ge=0.0, le=100.0)
+    star_market_share_pct: float = Field(ge=0.0, le=100.0)
+    density_score: float = Field(ge=15.0, le=95.0)
+    popularity_score: float = Field(ge=15.0, le=95.0)
+
+
+class FlowMetrics(BaseModel):
+    mature_repos: int = Field(ge=0)
+    infant_repos: int = Field(ge=0)
+    active_mature_repos_90d: int = Field(ge=0)
+    activity_coverage_pct: float = Field(ge=0.0, le=100.0)
+    total_commits_90d: int = Field(ge=0)
+    commit_cadence: float = Field(ge=0.0)
+    activity_intensity_score: float = Field(ge=25.0, le=95.0)
+    fork_depth_quality: float = Field(ge=30.0, le=95.0)
+    flow_score: float = Field(ge=25.0, le=95.0)
+
+
+class RawMomentum(BaseModel):
+    raw_repo_growth_pct: float
+    raw_star_growth_pct: float
+    composite_raw_momentum_pct: float
+
+
+class RegularizedMomentum(BaseModel):
+    reg_repo_growth: float
+    reg_star_growth: float
+    composite_reg_momentum: float
+
+
+class MomentumMetrics(BaseModel):
+    status: str = "VALID"  # VALID | INSUFFICIENT_HISTORY
+    raw_metrics: Optional[RawMomentum] = None
+    regularized_metrics: Optional[RegularizedMomentum] = None
+    robust_z_score: Optional[float] = None
+    fallback_tier_used: str = "MAD"  # MAD | IQR | RANK | UNIFORM
+    growth_momentum_score: Optional[float] = Field(None, ge=15.0, le=85.0)
+
+
+class CohortProvenance(BaseModel):
+    previous_snapshot_date: Optional[str] = None
+    common_repos_count: int = 0
+    newly_added_repos_count: int = 0
+    exited_repos_count: int = 0
+    jaccard_similarity: float = Field(default=1.0, ge=0.0, le=1.0)
+    sample_repo_ids_hash: Optional[str] = None
+
+
+class LanguageHealthSnapshotModel(BaseModel):
+    id: str
+    language: str
+    snapshot_id: str
+    snapshot_date: str
+    health_score: float = Field(ge=15.0, le=95.0)
+    health_level: str = "HEALTHY"  # HEALTHY | MODERATE | AT_RISK | CRITICAL
+    confidence_score: float = Field(ge=0.2, le=1.0)
+    confidence_level: str = "HIGH"  # HIGH | MEDIUM | LOW
+    stock: StockMetrics
+    flow: FlowMetrics
+    momentum: MomentumMetrics
+    cohort: CohortProvenance
+
+
+class CrawlSnapshotModel(BaseModel):
+    snapshot_id: str
+    snapshot_date: str
+    evaluated_at: datetime
+    version: str = "V3.0-Production"
+    total_evaluated_repos: int = 0
+    total_evaluated_stars: int = 0
+    total_evaluated_forks: int = 0
+    total_languages_tracked: int = 0
+    universal_scale: Dict[str, float] = Field(default_factory=dict)
+    weights: Dict[str, float] = Field(default_factory=dict)
+
+
+
 
